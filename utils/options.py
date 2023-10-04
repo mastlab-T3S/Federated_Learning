@@ -41,8 +41,8 @@ def args_parser():
     # other arguments
     parser.add_argument('--dataset', type=str, default='cifar10', help="name of dataset")
     parser.add_argument('--generate_data', type=int, default=1, help="whether generate new dataset")
-    parser.add_argument('--iid', type=int, default=1, help='whether i.i.d or not')
-    parser.add_argument('--noniid_case', type=int, default=0, help="non i.i.d case (1, 2, 3, 4)")
+    parser.add_argument('--iid', type=int, default=0, help='whether i.i.d or not')
+    parser.add_argument('--noniid_case', type=int, default=5, help="non i.i.d case (1, 2, 3, 4)")
     parser.add_argument('--data_beta', type=float, default=0.5,
                         help='The parameter for the dirichlet distribution for data partitioning')
     parser.add_argument('--num_classes', type=int, default=10, help="number of classes")
@@ -72,6 +72,11 @@ def args_parser():
     parser.add_argument("--lambda1", default=1, type=float, metavar="N", help="Weight for CE loss of main pathway")
     parser.add_argument("--lambda2", default=1, type=float, metavar="N", help="Weight for CE loss of hybrid pathways")
     parser.add_argument("--lambda3", default=1, type=float, metavar="N", help="Weight for KD loss of hybrid pathways")
+
+    # Demo
+    parser.add_argument('--AC_alpha', default=0.1, type=float)
+    parser.add_argument('--KD_alpha', default=1.0, type=float)
+    parser.add_argument('--KD_beta', default=0.1, type=float)
 
     args = parser.parse_args()
     return args

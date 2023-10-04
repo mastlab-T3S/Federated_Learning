@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 from models import LocalUpdate_FedAvg, DatasetSplit
 from optimizer.Adabelief import AdaBelief
 from utils.utils import test
+from models.Fed import Aggregation
 
 
 class Demo:
@@ -36,6 +37,7 @@ class Demo:
 
     def train(self):
         # 1. 选择设备
+        # TODO 设备选择策略
         selected_users = np.random.choice(range(self.args.num_users), self.M, replace=False)
 
         # 2. 训练上传模型
@@ -50,7 +52,8 @@ class Demo:
             lens.append(len(self.dict_users[client_idx]))
 
         # 3. 本地模型互相蒸馏（9个其他模型加1个之前的模型）
-        model_local = self.mutualKD(model_local)
+        # TODO (1)蒸馏温度 (2)只用kl loss
+        # model_local = self.mutualKD(model_local)
 
         # 4. 聚合蒸馏更新后的梯度
         grad = self.agg(model_local, lens)
@@ -63,17 +66,35 @@ class Demo:
         for grad_idx, params in enumerate(self.net_glob.parameters()):
             params.data.add_(self.args.lr, self.grad_glob[grad_idx])
 
-        # 6. 分支模型和新的全局模型蒸馏
+        # 6. TODO
         # (1) 直接用全局模型替换，不连续训练
-        self.models = [copy.deepcopy(self.net_glob) for _ in range(self.M)]
+        # self.models = [copy.deepcopy(self.net_glob) for _ in range(self.M)]
+
         # (2) 蒸馏
-        self.models = model_local
-        self.klWithNetGlob()
+        # self.models = model_local
+        # self.kdWithNetGlob()
+
+        # 2.1 蒸馏的时候只用klloss
+        # self.models = model_local
+        # self.kdWithNetGlob(0, 1)
+
         # (3) 弱聚合
+        # weight = [10, 1]
+        # self.models = model_local
+        # for model in self.models:
+        #     w = model.state_dict()
+        #     w_avg = Aggregation([w, self.net_glob.state_dict()], weight)
+        #     model.load_state_dict(w_avg)
 
         # (4) 设置连续训练次数
+        if self.round != 0 and self.round % 10 == 0:
+            self.models = [copy.deepcopy(self.net_glob) for _ in range(self.M)]
+        else:
+            self.models = model_local
 
         # (5) 设置动态连续训练次数
+
+        # (6) 什么都不做
 
     def mutualKD(self, models_local):
         afterKD = []
@@ -111,9 +132,9 @@ class Demo:
             self.grad_glob = grad
         else:
             for i in range(len(self.grad_glob)):
-                self.grad_glob[i] = 0.1 * self.grad_glob[i] + grad[i]
+                self.grad_glob[i] = self.args.AC_alpha * self.grad_glob[i] + grad[i]
 
-    def klWithNetGlob(self):
+    def kdWithNetGlob(self):
         for model in self.models:
             self.KD(model, [self.net_glob])
 
@@ -144,7 +165,10 @@ class Demo:
                 images, labels = images.to(self.args.device), labels.to(self.args.device)
                 student.zero_grad()
                 input_p = student(images)['output']
-                loss = loss_func(input_p, labels)
+
+                loss = 0
+                if self.args.KD_alpha != 0:
+                    loss = loss_func(input_p, labels)
 
                 klLoss = 0
                 for teacher in teachers:
@@ -152,7 +176,7 @@ class Demo:
                     klLoss += self.klLoss(input_p, input_q)
                 klLoss /= len(teachers)
 
-                loss += 0.1 * klLoss
+                loss = self.args.KD_beta * klLoss + loss * self.args.KD_alpha
 
                 loss.backward()
                 optimizer.step()
