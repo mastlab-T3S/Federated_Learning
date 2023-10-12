@@ -11,8 +11,12 @@ from torch.utils.data import DataLoader
 
 from models import LocalUpdate_FedAvg, DatasetSplit
 from optimizer.Adabelief import AdaBelief
-from utils.utils import test
+from utils.get_dataset import get_dataset
+from utils.utils import test, initWandb
 from models.Fed import Aggregation
+from tqdm import trange
+
+KD_epoch = 1
 
 
 class Demo:
@@ -27,44 +31,71 @@ class Demo:
         self.M = max(int(self.args.frac * self.args.num_users), 1)
         self.models = [copy.deepcopy(self.net_glob) for _ in range(self.M)]
         self.grad_glob = None
+        self.true_labels = self.getTrueLabels()
 
         self.round = 0
 
         self.acc = []
         self.max_avg = 0
         self.max_std = 0
-        self.initWandb()
+        initWandb(args)
+
+        args.iid = 1
+        # args.data_beta = 0.1
+        new_dataset_train, new_dataset_test, new_dict_users = get_dataset(args)
+        self.new_dict_users = new_dict_users
+
+    def getTrueLabels(self, normal=False, dataset_train=None, num_classes=None, dict_users=None):
+        trueLabels = []
+        dataset_train = self.dataset_train if dataset_train is None else dataset_train
+        num_classes = self.args.num_classes if num_classes is None else num_classes
+        dict_users = self.dict_users if dict_users is None else dict_users
+        for i in range(self.args.num_users):
+            label = [0 for _ in range(num_classes)]
+            for data_idx in dict_users[i]:
+                label[dataset_train[data_idx][1]] += 1
+            # if normal:
+            #     label = unitization(np.array(label))
+            trueLabels.append(np.array(label))
+        return trueLabels
 
     def train(self):
         # 1. 选择设备
         # TODO 设备选择策略
-        selected_users = np.random.choice(range(self.args.num_users), self.M, replace=False)
-
+        selected_users = list(np.random.choice(range(self.args.num_users), self.M, replace=False))
+        if self.round > 200:
+            self.dict_users = self.new_dict_users
         # 2. 训练上传模型
         lens = []
         model_local = []  # 用于存储本地模型
         for trace_idx, client_idx in enumerate(selected_users):
-            local = LocalUpdate_FedAvg(args=self.args, dataset=self.dataset_train, idxs=self.dict_users[client_idx])
-            model = local.train(round=iter, net=copy.deepcopy(self.models[trace_idx]).to(self.args.device),
+            local = LocalUpdate_FedAvg(args=self.args, dataset=self.dataset_train, idxs=self.dict_users[client_idx],
+                                       verbose=False)
+            model = local.train(round=self.round, net=copy.deepcopy(self.models[trace_idx]).to(self.args.device),
                                 requestType="M")
 
-            model_local.append(model)
+            model_local.append(copy.deepcopy(model))
             lens.append(len(self.dict_users[client_idx]))
 
         # 3. 本地模型互相蒸馏（9个其他模型加1个之前的模型）
         # TODO (1)蒸馏温度 (2)只用kl loss
-        # model_local = self.mutualKD(model_local)
+        # model_local = self.mutualKD(model_local, selected_users)
 
         # 4. 聚合蒸馏更新后的梯度
         grad = self.agg(model_local, lens)
 
         # 5. 增量相加梯度
-        # self.grad_glob = grad
-        self.accumulate(grad)
+        self.grad_glob = grad
+        # self.accumulate(grad)
 
         # 5.1 更新全局模型
-        for grad_idx, params in enumerate(self.net_glob.parameters()):
-            params.data.add_(self.args.lr, self.grad_glob[grad_idx])
+        w_glob = copy.deepcopy(self.net_glob.state_dict())
+        for k in w_glob.keys():
+            if w_glob[k].dtype != torch.long:
+                w_glob[k] += self.args.lr * self.grad_glob[k]
+            else:
+                w_glob[k] = w_glob[k].float() + self.args.lr * self.grad_glob[k]
+        self.net_glob.load_state_dict(w_glob)
 
         # 6. TODO
         # (1) 直接用全局模型替换，不连续训练
@@ -89,6 +120,14 @@ class Demo:
         # (4) 设置连续训练次数
         if self.round != 0 and self.round % 10 == 0:
             self.models = [copy.deepcopy(self.net_glob) for _ in range(self.M)]
+        # elif self.round < 100:
+        #     # 弱聚合
+        #     for model in model_local:
+        #         w = [model.state_dict(), self.net_glob.state_dict()]
+        #         lens = [10, 1]
+        #         w_avg = Aggregation(w, lens)
+        #         model.load_state_dict(w_avg)
+        #     self.models = model_local
         else:
             self.models = model_local
 
@@ -96,8 +135,22 @@ class Demo:
 
         # (6) 什么都不做
 
-    def mutualKD(self, models_local):
+    def mutualKD(self, models_local, selected_users):
         afterKD = []
+
+        # for trace_index, model in enumerate(models_local):
+        #     client_idx = selected_users[trace_index]
+        #     lst = []
+        #     for i, client in enumerate(selected_users):
+        #         if client != client_idx:
+        #             lst.append((i, np.dot(self.true_labels[client_idx], self.true_labels[client])))
+        #     lst.sort(key=lambda x: x[1])
+        #     teachers = [models_local[lst[0][0]], self.models[trace_index]]
+        #     student = copy.deepcopy(model)
+        #     self.KD(student, teachers)
+        #     afterKD.append(student)
+        # return afterKD
+
         for trace_index, model in enumerate(models_local):
             teachers = []
             for i in range(self.M):
@@ -112,27 +165,14 @@ class Demo:
 
     def agg(self, model_local, lens):
         grads = [self.getGrad(model_local[i], self.models[i]) for i in range(self.M)]
-        agg_grad = None
-        for i, grad in enumerate(grads):
-            if i == 0:
-                agg_grad = copy.deepcopy(grad)
-                for j in range(len(agg_grad)):
-                    agg_grad[j] = grad[j] * lens[i]
-                continue
-            for j in range(len(agg_grad)):
-                agg_grad[j] += grad[j] * lens[i]
-
-        total = sum(lens)
-        for j in range(len(agg_grad)):
-            agg_grad[j] = torch.div(agg_grad[j], total)
-        return agg_grad
+        return Aggregation(grads, lens)
 
     def accumulate(self, grad):
         if self.grad_glob is None:
             self.grad_glob = grad
         else:
-            for i in range(len(self.grad_glob)):
-                self.grad_glob[i] = self.args.AC_alpha * self.grad_glob[i] + grad[i]
+            for k in self.grad_glob.keys():
+                self.grad_glob[k] = self.args.AC_alpha * self.grad_glob[k] + grad[k]
 
     def kdWithNetGlob(self):
         for model in self.models:
@@ -153,14 +193,14 @@ class Demo:
         # train and update
         optimizer = None
         if self.args.optimizer == 'sgd':
-            optimizer = torch.optim.SGD(student.parameters(), lr=self.args.lr, momentum=self.args.momentum)
+            optimizer = torch.optim.SGD(student.parameters(), lr=self.args.KD_lr, momentum=self.args.momentum)
         elif self.args.optimizer == 'adam':
             optimizer = torch.optim.Adam(student.parameters(), lr=self.args.lr)
         elif self.args.optimizer == 'adaBelief':
             optimizer = AdaBelief(student.parameters(), lr=self.args.lr)
 
         Predict_loss = 0
-        for _ in range(self.args.local_ep):
+        for _ in range(self.args.KD_epoch):
             for batch_idx, (images, labels) in enumerate(ldr_train):
                 images, labels = images.to(self.args.device), labels.to(self.args.device)
                 student.zero_grad()
@@ -176,7 +216,10 @@ class Demo:
                     klLoss += self.klLoss(input_p, input_q)
                 klLoss /= len(teachers)
 
-                loss = self.args.KD_beta * klLoss + loss * self.args.KD_alpha
+                if self.args.KD_alpha != 0:
+                    loss = self.args.KD_beta * klLoss + loss * self.args.KD_alpha
+                else:
+                    loss = klLoss
 
                 loss.backward()
                 optimizer.step()
@@ -185,32 +228,23 @@ class Demo:
 
     def getGrad(self, model, preModel):
         with torch.no_grad():
-            delta = [para for para in model.parameters()]
-            for grad_idx, params in enumerate(preModel.parameters()):
-                delta[grad_idx] = (delta[grad_idx] - params) / self.args.lr
+            delta = copy.deepcopy(model.state_dict())
+            w = preModel.state_dict()
+            for k in w.keys():
+                delta[k] = (delta[k] - w[k]) / self.args.lr
         return delta
 
     def test(self):
-        acc = test(self.net_glob, self.dataset_test, self.args)
+        acc, loss = test(self.net_glob, self.dataset_test, self.args)
         self.acc.append(acc)
         temp = self.acc[max(0, len(self.acc) - 10)::]
         avg = np.mean(temp)
         if avg > self.max_avg:
             self.max_avg = avg
             self.max_std = np.std(temp)
-        logger.info("Round{}, acc:{:.2f}, max_avg:{:.2f}, max_std:{:.2f}",
-                    self.round, acc, self.max_avg, self.max_std)
-        wandb.log({'acc': acc, 'max_avg': self.max_avg, "max_std": self.max_std})
-
-    def initWandb(self):
-        os.environ["WANDB_API_KEY"] = "ccea3a8394712aa6a0fd1eefd90832157836a985"
-        data_split = "IID" if self.args.iid == 1 else str(self.args.data_beta)
-        name = "{}_{}".format(data_split, self.args.algorithm)
-
-        wandb.init(project="myFLWorkSpace", name=name,
-                   tags=[str(self.args.model), str(self.args.dataset), data_split],
-                   config={"seed": self.args.seed})
-        wandb.log({'acc': 0, 'max_avg': 0, "max_std": 0})
+        logger.info("Round{}, acc:{:.2f}, max_avg:{:.2f}, max_std:{:.2f}, loss:{:.2f}",
+                    self.round, acc, self.max_avg, self.max_std, loss)
+        wandb.log({'acc': acc, 'max_avg': self.max_avg, "max_std": self.max_std, "loss": loss})
 
     @logger.catch()
     def main(self):

@@ -3,6 +3,8 @@
 import datetime
 import os
 
+import wandb
+
 from models import test_img
 
 
@@ -44,4 +46,14 @@ def test(net_glob, dataset_test, args):
 
     # print("Testing accuracy: {:.2f}".format(acc_test))
 
-    return acc_test.item()
+    return acc_test.item(),loss_test
+
+def initWandb(args):
+    os.environ["WANDB_API_KEY"] = "ccea3a8394712aa6a0fd1eefd90832157836a985"
+    data_split = "IID" if args.iid == 1 else str(args.data_beta)
+    name = "{}_{}".format(data_split, args.algorithm)
+
+    wandb.init(project="myFLWorkSpace", name=name,
+               tags=[str(args.model), str(args.dataset), data_split],
+               config={"seed": args.seed})
+    wandb.log({'acc': 0, 'max_avg': 0, "max_std": 0})

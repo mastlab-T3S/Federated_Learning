@@ -64,7 +64,6 @@ class LocalUpdate_FedAvg(object):
         if self.verbose:
             info = '\nUser predict Loss={:.4f}'.format(Predict_loss / (self.args.local_ep * len(self.ldr_train)))
             print(info)
-
         if requestType == "W":
             return net.state_dict()
         else:

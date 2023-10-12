@@ -25,9 +25,10 @@ def args_parser():
     parser.add_argument("--data_augmentation", type=int, default=0)
     parser.add_argument("--cifar100_coarse", type=int, default=1)
     parser.add_argument("--dynamic_lr", type=int, default=0)
+    parser.add_argument("--log", type=int, default=1)
 
     # model arguments
-    parser.add_argument('--model', type=str, default='cnn', help='model name')
+    parser.add_argument('--model', type=str, default='resnet', help='model name')
     parser.add_argument('--kernel_num', type=int, default=9, help='number of each kind of kernel')
     parser.add_argument('--kernel_sizes', type=str, default='3,4,5',
                         help='comma-separated kernel size to use for convolution')
@@ -77,6 +78,8 @@ def args_parser():
     parser.add_argument('--AC_alpha', default=0.1, type=float)
     parser.add_argument('--KD_alpha', default=1.0, type=float)
     parser.add_argument('--KD_beta', default=0.1, type=float)
+    parser.add_argument('--KD_epoch', default=1, type=int)
+    parser.add_argument('--KD_lr', default=0.01, type=float)
 
     args = parser.parse_args()
     return args

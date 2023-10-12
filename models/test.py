@@ -18,7 +18,7 @@ def test_img(net_g, datatest, args):
     with torch.no_grad():
         for idx, (data, target) in enumerate(data_loader):
             if args.gpu != -1:
-                data, target = data.cuda(), target.cuda()
+                data, target = data.cuda(args.device), target.cuda(args.device)
             log_probs = net_g(data)['output']
             # sum up batch loss
             test_loss += F.cross_entropy(log_probs, target, reduction='sum').item()

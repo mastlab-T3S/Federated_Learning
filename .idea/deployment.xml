@@ -1,18 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" remoteFilesAllowedToDisappearOnAutoupload="false">
+  <component name="PublishConfigData" autoUpload="Always" serverName="codefree@58.198.176.186:22 password" remoteFilesAllowedToDisappearOnAutoupload="false">
     <serverData>
       <paths name="chen@58.198.176.148:22 password">
         <serverdata>
           <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="" local="$PROJECT_DIR$" web="/" />
+            <mapping local="" />
           </mappings>
         </serverdata>
       </paths>
-      <paths name="ubuntu@49.52.10.15:22 password">
+      <paths name="codefree@58.198.176.186:22 password">
         <serverdata>
           <mappings>
-            <mapping deploy="/tmp/pycharm_project_285" local="$PROJECT_DIR$" />
+            <mapping deploy="/home/codefree/PycharmProjects/myFLWorkSpace" local="$PROJECT_DIR$" web="/" />
+            <mapping local="" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="codefree@58.198.177.35:22 password">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>

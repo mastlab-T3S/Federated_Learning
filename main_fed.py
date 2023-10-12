@@ -26,10 +26,17 @@ def FedAvg(net_glob, dataset_train, dataset_test, dict_users):
     # training
     acc = []
 
+    args.iid = 0
+    args.data_beta = 0.1
+    new_dataset_train, new_dataset_test, new_dict_users = get_dataset(args)
+
     for iter in range(args.epochs):
 
         print('*'*80)
         print('Round {:3d}'.format(iter))
+
+        if iter > 200:
+            dict_users = new_dict_users
 
 
         w_locals = []
