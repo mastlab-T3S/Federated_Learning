@@ -64,20 +64,19 @@ class GitSFL(Training_ASync):
             self.idle_clients.remove(nextClient)
             self.idle_clients.add(client_index)
 
-    def splitTrain(self, curClient:int):
+    def splitTrain(self, curClient: int):
         helpers = self.selectHelpers(curClient)
         sampledActivation = [self.sampleData(helper) for helper in helpers]
 
         pass
 
     def Agg(self):
-        # Agg Client
         w_client = [copy.deepcopy(model_client.state_dict) for model_client in self.modelClient]
-        w_server = [copy.deepcopy(model_server.state_dict) for model_server in self.modelClient]
         w_avg_client = Aggregation(w_client, self.modelVersion)
-        w_avg_server = Aggregation(w_server, self.modelVersion)
-
         self.net_glob_client.load_state_dict(w_avg_client)
+
+        w_server = [copy.deepcopy(model_server.state_dict) for model_server in self.modelClient]
+        w_avg_server = Aggregation(w_server, self.modelVersion)
         self.net_glob_server.load_state_dict(w_avg_server)
 
         self.net_glob.load_state_dict(w_avg_client)
@@ -87,7 +86,7 @@ class GitSFL(Training_ASync):
         nextClient = random.choice(list(self.idle_clients))
         return nextClient
 
-    def weakAgg(self, modelIdx:int):
+    def weakAgg(self, modelIdx: int):
         cur_model_client = self.modelClient[modelIdx]
         cur_model_server = self.modelServer[modelIdx]
         weight = max(10 + self.modelVersion[modelIdx] - np.mean(self.modelVersion), 2)
@@ -100,7 +99,7 @@ class GitSFL(Training_ASync):
         w_avg_server = Aggregation(w, lens)
         cur_model_client.load_state_dict(w_avg_server)
 
-    def sampleData(self, helper:int) -> List[int]:
+    def sampleData(self, helper: int) -> List[int]:
         # randomSample
         sampledNum = [int(AMOUNT_OF_ACTIVATION * (num / sum(self.true_labels[helper]))) for num in
                       self.true_labels[helper]]
@@ -109,7 +108,7 @@ class GitSFL(Training_ASync):
             sampledData.extend(random.sample(self.dataByLabel[helper][classIdx], num))
         return sampledData
 
-    def selectHelpers(self, curClient:int) -> List[int]:
+    def selectHelpers(self, curClient: int) -> List[int]:
         curDistance = []
         for i, distance in enumerate(self.distance[curClient]):
             if i == curClient:
