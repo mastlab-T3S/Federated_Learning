@@ -1,10 +1,11 @@
-import copy
+from typing import List
 
 import numpy as np
 import torch
 from loguru import logger
 
 from Algorithm.Training_ASync import Training_ASync
+from utils.utils import getTrueLabels
 
 
 @logger.catch
@@ -16,20 +17,8 @@ class GitSFL(Training_ASync):
         self.repoSize = int(args.num_users * args.frac)
         self.modelServer = []
         self.modelClient = []
-        self.true_labels = self.getTrueLabels()
+        self.true_labels = getTrueLabels(self)
         self.selected_count = [0 for _ in range(args.num_users)]
-
-    def getTrueLabels(self, dataset_train=None, num_classes=None, dict_users=None):
-        trueLabels = []
-        dataset_train = self.dataset_train if dataset_train is None else dataset_train
-        num_classes = self.args.num_classes if num_classes is None else num_classes
-        dict_users = self.dict_users if dict_users is None else dict_users
-        for i in range(self.args.num_users):
-            label = [0 for _ in range(num_classes)]
-            for data_idx in dict_users[i]:
-                label[dataset_train[data_idx][1]] += 1
-            trueLabels.append(np.array(label))
-        return trueLabels
 
     @logger.catch()
     def train(self):
@@ -68,14 +57,11 @@ class GitSFL(Training_ASync):
     def Agg(self):
         pass
 
-    def test(self):
-        pass
-
     def selectNextClient(self) -> int:
         pass
 
     def weakAgg(self):
         pass
 
-    def sampleActivation(self) -> torch.tensor:
+    def sampleActivation(self) -> List[torch.tensor]:
         pass

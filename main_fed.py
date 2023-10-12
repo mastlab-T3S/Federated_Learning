@@ -5,6 +5,7 @@
 import matplotlib
 
 from Algorithm.Training_Demo import Demo
+from Algorithm.Training_GitSFL import GitSFL
 
 # from Algorithm.Demo import Demo
 
@@ -346,6 +347,9 @@ if __name__ == '__main__':
                     dic.remove(i)
         demo = Demo(args, dataset_train, dataset_test, proxy_dict, net_glob, dict_users)
         demo.main()
+    elif args.algorithm == "GitSFL":
+        gitsfl = GitSFL(args, dataset_train, dataset_test, net_glob, dict_users)
+        gitsfl.train()
     else:
         raise "%s algorithm has not achieved".format(args.algorithm)
 

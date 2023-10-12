@@ -3,6 +3,7 @@
 import datetime
 import os
 
+import numpy as np
 import wandb
 
 from models import test_img
@@ -57,3 +58,15 @@ def initWandb(args):
                tags=[str(args.model), str(args.dataset), data_split],
                config={"seed": args.seed})
     wandb.log({'acc': 0, 'max_avg': 0, "max_std": 0})
+
+def getTrueLabels(self, dataset_train=None, num_classes=None, dict_users=None):
+    trueLabels = []
+    dataset_train = self.dataset_train if dataset_train is None else dataset_train
+    num_classes = self.args.num_classes if num_classes is None else num_classes
+    dict_users = self.dict_users if dict_users is None else dict_users
+    for i in range(self.args.num_users):
+        label = [0 for _ in range(num_classes)]
+        for data_idx in dict_users[i]:
+            label[dataset_train[data_idx][1]] += 1
+        trueLabels.append(np.array(label))
+    return trueLabels
