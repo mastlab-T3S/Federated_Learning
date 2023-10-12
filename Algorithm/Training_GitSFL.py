@@ -88,13 +88,12 @@ class GitSFL(Training_ASync):
 
     def weakAgg(self, modelIdx: int):
         cur_model_client = self.modelClient[modelIdx]
-        cur_model_server = self.modelServer[modelIdx]
-        weight = max(10 + self.modelVersion[modelIdx] - np.mean(self.modelVersion), 2)
         w = [copy.deepcopy(self.net_glob_client.state_dict()), copy.deepcopy(cur_model_client)]
-        lens = [1, weight]
+        lens = [1, max(10 + self.modelVersion[modelIdx] - np.mean(self.modelVersion), 2)]
         w_avg_client = Aggregation(w, lens)
         cur_model_client.load_state_dict(w_avg_client)
 
+        cur_model_server = self.modelServer[modelIdx]
         w = [copy.deepcopy(self.net_glob_server.state_dict()), copy.deepcopy(cur_model_server)]
         w_avg_server = Aggregation(w, lens)
         cur_model_client.load_state_dict(w_avg_server)
