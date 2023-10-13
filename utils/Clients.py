@@ -16,11 +16,7 @@ class Clients:
         client = self.get(idx)
         train_time = client.get_train_time()
         comm_time = client.get_comm_time()
-        if self.args.time_c == 1:
-            return train_time + comm_time + 20
-        
-        else:
-            return train_time + comm_time
+        return train_time + comm_time
 
     def train(self, idx, version, model):
         for i in range(len(self.update_list) - 1, -1, -1):

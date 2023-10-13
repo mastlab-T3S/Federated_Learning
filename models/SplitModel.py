@@ -27,9 +27,8 @@ class ResBlk(nn.Module):
 
 # Model at client side
 class ResNet18_client_side(nn.Module):
-    def __init__(self, type):
+    def __init__(self):
         super(ResNet18_client_side, self).__init__()
-        self.type = type
         self.layer1 = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=3, stride=3, padding=0),
             nn.BatchNorm2d(64)

@@ -6,6 +6,7 @@ import matplotlib
 
 from Algorithm.Training_Demo import Demo
 from Algorithm.Training_GitSFL import GitSFL
+from models.SplitModel import ResNet18_client_side, ResNet18_server_side
 
 # from Algorithm.Demo import Demo
 
@@ -21,7 +22,6 @@ from Algorithm import *
 
 
 def FedAvg(net_glob, dataset_train, dataset_test, dict_users):
-
     net_glob.train()
 
     # training
@@ -33,12 +33,11 @@ def FedAvg(net_glob, dataset_train, dataset_test, dict_users):
 
     for iter in range(args.epochs):
 
-        print('*'*80)
+        print('*' * 80)
         print('Round {:3d}'.format(iter))
 
         if iter > 200:
             dict_users = new_dict_users
-
 
         w_locals = []
         lens = []
@@ -46,7 +45,7 @@ def FedAvg(net_glob, dataset_train, dataset_test, dict_users):
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
         for idx in idxs_users:
             local = LocalUpdate_FedAvg(args=args, dataset=dataset_train, idxs=dict_users[idx])
-            w = local.train(round=iter,net=copy.deepcopy(net_glob).to(args.device))
+            w = local.train(round=iter, net=copy.deepcopy(net_glob).to(args.device))
 
             w_locals.append(copy.deepcopy(w))
             lens.append(len(dict_users[idx]))
@@ -91,6 +90,7 @@ def FedProx(net_glob, dataset_train, dataset_test, dict_users):
 
     save_result(acc, 'test_acc', args)
 
+
 def FedGKD(net_glob, dataset_train, dataset_test, dict_users):
     net_glob.train()
 
@@ -123,7 +123,6 @@ def FedGKD(net_glob, dataset_train, dataset_test, dict_users):
 
 
 def Moon(net_glob, dataset_train, dataset_test, dict_users):
-
     net_glob.train()
 
     # generate list of local models for each user
@@ -139,7 +138,7 @@ def Moon(net_glob, dataset_train, dataset_test, dict_users):
 
     acc = []
 
-    lens = [len(datasets) for _,datasets in dict_users.items()]
+    lens = [len(datasets) for _, datasets in dict_users.items()]
 
     for iter in range(args.epochs):
 
@@ -199,10 +198,12 @@ def Moon(net_glob, dataset_train, dataset_test, dict_users):
 
     save_result(acc, 'test_acc', args)
 
+
 from utils.clustering import *
 from scipy.cluster.hierarchy import linkage
-def ClusteredSampling(net_glob, dataset_train, dataset_test, dict_users):
 
+
+def ClusteredSampling(net_glob, dataset_train, dataset_test, dict_users):
     net_glob.to('cpu')
 
     n_samples = np.array([len(dict_users[idx]) for idx in dict_users.keys()])
@@ -277,14 +278,15 @@ def ClusteredSampling(net_glob, dataset_train, dataset_test, dict_users):
 
     save_result(acc, 'test_acc', args)
 
+
 def test(net_glob, dataset_test, args):
-    
     # testing
     acc_test, loss_test = test_img(net_glob, dataset_test, args)
 
     print("Testing accuracy: {:.2f}".format(acc_test))
 
     return acc_test.item()
+
 
 if __name__ == '__main__':
     # parse args
@@ -305,7 +307,7 @@ if __name__ == '__main__':
         elif 'cifar' in args.dataset:
             net_glob = CNNCifar(args)
     elif 'resnet' in args.model:
-        net_glob = ResNet18_cifar10(num_classes = args.num_classes)
+        net_glob = ResNet18_cifar10(num_classes=args.num_classes)
     elif 'mobilenet' in args.model:
         net_glob = MobileNetV2(args)
     elif 'vgg' in args.model:
@@ -348,8 +350,9 @@ if __name__ == '__main__':
         demo = Demo(args, dataset_train, dataset_test, proxy_dict, net_glob, dict_users)
         demo.main()
     elif args.algorithm == "GitSFL":
-        gitsfl = GitSFL(args, dataset_train, dataset_test, net_glob, dict_users)
+        net_glob_client = ResNet18_client_side()
+        net_glob_server = ResNet18_server_side()
+        gitsfl = GitSFL(args, net_glob, dataset_train, dataset_test, dict_users, net_glob_client, net_glob_server)
         gitsfl.train()
     else:
         raise "%s algorithm has not achieved".format(args.algorithm)
-

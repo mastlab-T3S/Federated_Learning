@@ -20,12 +20,13 @@ def args_parser():
     parser.add_argument('--momentum', type=float, default=0.5, help="SGD momentum (default: 0.5)")
     parser.add_argument('--weight_decay', type=float, default=1e-4, help="weight_decay (default: 1e-4)")
     parser.add_argument('--split', type=str, default='user', help="train-test split type, user or sample")
-    parser.add_argument("--algorithm", type=str, default="demo")
+    parser.add_argument("--algorithm", type=str, default="GitSFL")
+    parser.add_argument("--limit_time", type=int, default=40000)
 
     parser.add_argument("--data_augmentation", type=int, default=0)
     parser.add_argument("--cifar100_coarse", type=int, default=1)
     parser.add_argument("--dynamic_lr", type=int, default=0)
-    parser.add_argument("--log", type=int, default=1)
+    parser.add_argument("--log", type=int, default=0)
 
     # model arguments
     parser.add_argument('--model', type=str, default='resnet', help='model name')
