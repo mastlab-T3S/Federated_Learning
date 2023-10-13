@@ -70,3 +70,10 @@ def getTrueLabels(self, dataset_train=None, num_classes=None, dict_users=None):
             label[dataset_train[data_idx][1]] += 1
         trueLabels.append(np.array(label))
     return trueLabels
+
+def unitization(x):
+    n = np.sum(x)
+    if n == 0:
+        return x
+    else:
+        return x / n

@@ -9,7 +9,7 @@ from loguru import logger
 
 from Algorithm.Training_ASync import Training_ASync
 from models import Aggregation
-from utils.utils import getTrueLabels
+from utils.utils import getTrueLabels, unitization
 
 AMOUNT_OF_HELPERS = 3
 AMOUNT_OF_ACTIVATION = 50
@@ -26,6 +26,7 @@ class GitSFL(Training_ASync):
         self.modelServer = []
         self.modelClient = []
         self.modelVersion = [0 for _ in range(self.repoSize)]
+        self.cumulative_label_distribution = [np.zeros(args.num_classes) for _ in range(self.repoSize)]
         self.true_labels = getTrueLabels(self)
         self.selected_count = [0 for _ in range(args.num_users)]
 
@@ -53,6 +54,8 @@ class GitSFL(Training_ASync):
             self.modelVersion[modelIndex] += 1
             for update in self.update_queue:
                 update[-1] -= trainTime
+            self.time += trainTime
+            self.cumulative_label_distribution[modelIndex] = self.cumulative_label_distribution[modelIndex] * 0.9 + self.true_labels[modelIndex]
 
             print(self.true_labels[client_index])
 
@@ -73,7 +76,7 @@ class GitSFL(Training_ASync):
 
     def splitTrain(self, curClient: int):
         helpers = self.selectHelpers(curClient)
-        sampledData = [self.sampleData(helper, amount) for helper, amount in helpers]
+        sampledData = [self.sampleData(helper, amount) for helper, amount in helpers.items()]
 
         pass
 
@@ -135,19 +138,24 @@ class GitSFL(Training_ASync):
 
         value = self.distance[curClient][::]
         value.pop(curClient)
-        value = [-v for v in value]
+        value = [max(value) - v for v in value]
 
-        print(self.args.num_users - 1, budget, amount, value, weight)
-        max_value, selected_items, helpers = knapsack(self.args.num_users - 1, budget, amount, weight, value)
+        max_value, selected_items = knapsack(self.args.num_users - 1, budget, amount, weight, value)
         print(max_value, selected_items)
 
+        helpers = {}
+        for client, info in selected_items.items():
+            if client >= curClient:
+                helpers[client + 1] = info[1]
+            else:
+                helpers[client] = info[1]
         return helpers
 
     def countDistance(self) -> list[list[int]]:
         distance = [[-1 for _ in range(self.args.num_users)] for _ in range(self.args.num_users)]
         for i in range(self.args.num_users):
-            for j in range(i + 1, self.args.num_users):
-                dot = np.dot(self.true_labels[i], self.true_labels[j])
+            for j in range(i, self.args.num_users):
+                dot = np.dot(unitization(self.true_labels[i]), unitization(self.true_labels[j]))
                 distance[i][j] = distance[j][i] = dot
         return distance
 
@@ -170,7 +178,13 @@ class GitSFL(Training_ASync):
             for label in trueLabel:
                 if label < union and label != 0:
                     union = label
-            temp = [int(math.log(label // union)) for label in trueLabel]
+            # clientsWeight.append(sum([label // union for label in trueLabel]))
+            temp = []
+            for label in trueLabel:
+                if label == 0:
+                    temp.append(0)
+                else:
+                    temp.append(int(math.log(label // union + math.e - 1)))
             clientsWeight.append(sum(temp))
             print(temp)
             print(clientsWeight[-1])
@@ -196,12 +210,11 @@ def knapsack(N, V, M, C, W):
         if dp[i][j] != dp[i - 1][j]:
             cnt = min(M[i - 1], j // C[i - 1])
             selected_items[i] = [cnt, cnt * C[i - 1], cnt * W[i - 1]]
-            helpers[i] = cnt * W[i - 1]
             j -= C[i - 1] * cnt
         i -= 1
 
     # 返回最大价值和选中的物品列表
-    return dp[N][V], selected_items, helpers
+    return dp[N][V], selected_items
 
 # # 示例数据
 # N = 4  # 物品种类数
