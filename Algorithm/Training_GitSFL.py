@@ -1,19 +1,19 @@
 import copy
-import math
 import random
-from typing import List, Mapping
+from typing import List
 
 import numpy as np
 
 from loguru import logger
 
 from Algorithm.Training_ASync import Training_ASync
-from models import Aggregation
-from utils.utils import getTrueLabels, unitization
+from models import Aggregation, LocalUpdate_FedAvg
+from utils.utils import getTrueLabels
 
 AMOUNT_OF_HELPERS = 3
 AMOUNT_OF_ACTIVATION = 50
 COMM_BUDGET = 0.1
+DECAY = 0.5
 
 
 @logger.catch
@@ -23,20 +23,20 @@ class GitSFL(Training_ASync):
 
         # GitSFL Setting
         self.repoSize = int(args.num_users * args.frac)
+        self.repo = [copy.deepcopy(self.net_glob) for _ in range(self.repoSize)]
         self.modelServer = []
         self.modelClient = []
         self.modelVersion = [0 for _ in range(self.repoSize)]
-        self.cumulative_label_distribution = [np.zeros(args.num_classes) for _ in range(self.repoSize)]
+        self.cumulative_label_distributions = [np.zeros(args.num_classes) for _ in range(self.repoSize)]
+        self.cumulative_label_distribution_weight = [0 for _ in range(self.repoSize)]
         self.true_labels = getTrueLabels(self)
         self.selected_count = [0 for _ in range(args.num_users)]
+        self.help_count = [0 for _ in range(args.num_users)]
 
         self.net_glob_client = net_glob_client
         self.net_glob_server = net_glob_server
 
-        self.distance = self.countDistance()
         self.dataByLabel = self.organizeDataByLabel()
-        self.clientsWeight = self.countClientsWeight()
-        self.amount = [len(self.dict_users[clientIdx]) // weight for clientIdx, weight in enumerate(self.clientsWeight)]
 
     @logger.catch()
     def train(self):
@@ -55,17 +55,20 @@ class GitSFL(Training_ASync):
             for update in self.update_queue:
                 update[-1] -= trainTime
             self.time += trainTime
-            self.cumulative_label_distribution[modelIndex] = self.cumulative_label_distribution[modelIndex] * 0.9 + self.true_labels[modelIndex]
+            self.cumulative_label_distribution_weight[modelIndex] = self.cumulative_label_distribution_weight[
+                                                                        modelIndex] * DECAY + 1
+            self.cumulative_label_distributions[modelIndex] = (self.cumulative_label_distributions[modelIndex] * DECAY +
+                                                               self.true_labels[client_index]) / \
+                                                              self.cumulative_label_distribution_weight[modelIndex]
 
-            print(self.true_labels[client_index])
+            # self.splitTrain(client_index, modelIndex)
+            self.tempTrain(client_index, modelIndex)
 
-            self.splitTrain(client_index)
+            self.Agg()
 
-            # self.Agg()
+            self.test()
 
-            # self.test()
-
-            # self.weakAgg(modelIndex)
+            self.weakAgg(modelIndex)
 
             nextClient = self.selectNextClient()
             self.update_queue.append([nextClient, modelIndex, model_version + 1, self.clients.getTime(nextClient)])
@@ -74,90 +77,103 @@ class GitSFL(Training_ASync):
             self.idle_clients.remove(nextClient)
             self.idle_clients.add(client_index)
 
-    def splitTrain(self, curClient: int):
-        helpers = self.selectHelpers(curClient)
-        sampledData = [self.sampleData(helper, amount) for helper, amount in helpers.items()]
+            self.round += 1
+
+        print(self.help_count)
+
+    def splitTrain(self, curClient: int, modelIdx: int):
+        helpers, provide_data = self.selectHelpers(curClient, modelIdx)
+        # sampledData = [self.sampleData(helper, amount) for helper, amount in helpers.items()]
 
         pass
 
+    def tempTrain(self, curClient: int, modelIdx: int):
+        helpers, provide_data = self.selectHelpers(curClient, modelIdx)
+        sampledData = self.sampleData(helpers, provide_data)
+        sampledData.extend(self.dict_users[curClient])
+        local = LocalUpdate_FedAvg(args=self.args, dataset=self.dataset_train, idxs=sampledData, verbose=False)
+        w = local.train(round=self.round, net=copy.deepcopy(self.repo[modelIdx]).to(self.args.device))
+        self.repo[modelIdx].load_state_dict(w)
+
     def Agg(self):
-        w_client = [copy.deepcopy(model_client.state_dict) for model_client in self.modelClient]
-        w_avg_client = Aggregation(w_client, self.modelVersion)
-        self.net_glob_client.load_state_dict(w_avg_client)
+        # w_client = [copy.deepcopy(model_client.state_dict) for model_client in self.modelClient]
+        # w_avg_client = Aggregation(w_client, self.modelVersion)
+        # self.net_glob_client.load_state_dict(w_avg_client)
+        #
+        # w_server = [copy.deepcopy(model_server.state_dict) for model_server in self.modelClient]
+        # w_avg_server = Aggregation(w_server, self.modelVersion)
+        # self.net_glob_server.load_state_dict(w_avg_server)
+        #
+        # self.net_glob.load_state_dict(w_avg_client)
+        # self.net_glob.load_state_dict(w_avg_server)
 
-        w_server = [copy.deepcopy(model_server.state_dict) for model_server in self.modelClient]
-        w_avg_server = Aggregation(w_server, self.modelVersion)
-        self.net_glob_server.load_state_dict(w_avg_server)
-
-        self.net_glob.load_state_dict(w_avg_client)
-        self.net_glob.load_state_dict(w_avg_server)
+        #############################################
+        w = [copy.deepcopy(model.state_dict()) for model in self.repo]
+        w_avg = Aggregation(w, self.modelVersion)
+        self.net_glob.load_state_dict(w_avg)
 
     def selectNextClient(self) -> int:
         nextClient = random.choice(list(self.idle_clients))
         return nextClient
 
     def weakAgg(self, modelIdx: int):
-        cur_model_client = self.modelClient[modelIdx]
-        w = [copy.deepcopy(self.net_glob_client.state_dict()), copy.deepcopy(cur_model_client)]
+        # cur_model_client = self.modelClient[modelIdx]
+        # w = [copy.deepcopy(self.net_glob_client.state_dict()), copy.deepcopy(cur_model_client)]
+        # lens = [1, max(10 + self.modelVersion[modelIdx] - np.mean(self.modelVersion), 2)]
+        # w_avg_client = Aggregation(w, lens)
+        # cur_model_client.load_state_dict(w_avg_client)
+        #
+        # cur_model_server = self.modelServer[modelIdx]
+        # w = [copy.deepcopy(self.net_glob_server.state_dict()), copy.deepcopy(cur_model_server)]
+        # w_avg_server = Aggregation(w, lens)
+        # cur_model_client.load_state_dict(w_avg_server)
+
+        ###########################################################
         lens = [1, max(10 + self.modelVersion[modelIdx] - np.mean(self.modelVersion), 2)]
-        w_avg_client = Aggregation(w, lens)
-        cur_model_client.load_state_dict(w_avg_client)
+        w = [copy.deepcopy(self.net_glob.state_dict()), copy.deepcopy(self.repo[modelIdx].state_dict())]
+        w_avg = Aggregation(w, lens)
+        self.repo[modelIdx].load_state_dict(w_avg)
 
-        cur_model_server = self.modelServer[modelIdx]
-        w = [copy.deepcopy(self.net_glob_server.state_dict()), copy.deepcopy(cur_model_server)]
-        w_avg_server = Aggregation(w, lens)
-        cur_model_client.load_state_dict(w_avg_server)
-
-    def sampleData(self, helper: int, amount: int) -> List[int]:
+    def sampleData(self, helper: int, provideData: List[int]) -> List[int]:
         # randomSample
-        sampledNum = [int(amount * (num / sum(self.true_labels[helper]))) for num in
-                      self.true_labels[helper]]
-        print(sampledNum)
         sampledData = []
-        for classIdx, num in enumerate(sampledNum):
+        for classIdx, num in enumerate(provideData):
             sampledData.extend(random.sample(self.dataByLabel[helper][classIdx], num))
         return sampledData
 
-    def selectHelpers(self, curClient: int) -> Mapping[int, int]:
-        # curDistance = []
-        # for i, distance in enumerate(self.distance[curClient]):
-        #     if i == curClient:
-        #         continue
-        #     curDistance.append((i, distance))
-        #
-        # curDistance.sort(key=lambda x: x[-1])
-        # helpers = [i[0] for i in curDistance[:AMOUNT_OF_HELPERS]]
+    def selectHelpers(self, curClient: int, modelIdx: int) -> tuple[int, List[int]]:
+        overall_requirement = max(10, int(len(self.dict_users[curClient]) * COMM_BUDGET))
+        cumulative_label_distribution = self.cumulative_label_distributions[modelIdx]
+        prior_of_classes = [max(np.mean(cumulative_label_distribution) - label, 0)
+                            for label in cumulative_label_distribution]
+        requirement_classes = [int(overall_requirement * (prior / sum(prior_of_classes))) for prior in prior_of_classes]
 
-        budget = int(len(self.dict_users[curClient]) * COMM_BUDGET)
+        helpers = 200
+        provide_data = []
+        max_contribution = 0
+        candidate = list(range(self.args.num_users))
+        candidate.pop(curClient)
+        random.shuffle(candidate)
+        for client in candidate:
+            contribution = 0
+            temp = []
+            for classIdx, label in enumerate(self.true_labels[client]):
+                contribution += min(label, requirement_classes[classIdx])
+                temp.append(min(label, requirement_classes[classIdx]))
+            if contribution > max_contribution:
+                max_contribution = contribution
+                helpers = client
+                provide_data = temp
+        self.help_count[helpers] += 1
 
-        amount = self.amount[::]
-        amount.pop(curClient)
-
-        weight = self.clientsWeight[::]
-        weight.pop(curClient)
-
-        value = self.distance[curClient][::]
-        value.pop(curClient)
-        value = [max(value) - v for v in value]
-
-        max_value, selected_items = knapsack(self.args.num_users - 1, budget, amount, weight, value)
-        print(max_value, selected_items)
-
-        helpers = {}
-        for client, info in selected_items.items():
-            if client >= curClient:
-                helpers[client + 1] = info[1]
-            else:
-                helpers[client] = info[1]
-        return helpers
-
-    def countDistance(self) -> list[list[int]]:
-        distance = [[-1 for _ in range(self.args.num_users)] for _ in range(self.args.num_users)]
-        for i in range(self.args.num_users):
-            for j in range(i, self.args.num_users):
-                dot = np.dot(unitization(self.true_labels[i]), unitization(self.true_labels[j]))
-                distance[i][j] = distance[j][i] = dot
-        return distance
+        print("overall_requirement:\t", overall_requirement)
+        print("current_train_data:\t", list(self.true_labels[curClient]))
+        print("cumu_label_distri:\t", list(map(int, cumulative_label_distribution)))
+        print("prior_of_classes:\t", list(map(int, prior_of_classes)))
+        print("required_classes:\t", requirement_classes)
+        print("selected_helper:\t", list(self.true_labels[helpers]))
+        print("total_provide_data:\t", provide_data)
+        return helpers, provide_data
 
     def organizeDataByLabel(self) -> list[list[list[int]]]:
         organized = []
@@ -168,62 +184,3 @@ class GitSFL(Training_ASync):
                 res[self.dataset_train[data][1]].append(data)
             organized.append(res)
         return organized
-
-    def countClientsWeight(self) -> List[int]:
-        clientsWeight = []
-        for client in range(self.args.num_users):
-            trueLabel = self.true_labels[client]
-            union = 99999999
-            print(trueLabel)
-            for label in trueLabel:
-                if label < union and label != 0:
-                    union = label
-            # clientsWeight.append(sum([label // union for label in trueLabel]))
-            temp = []
-            for label in trueLabel:
-                if label == 0:
-                    temp.append(0)
-                else:
-                    temp.append(int(math.log(label // union + math.e - 1)))
-            clientsWeight.append(sum(temp))
-            print(temp)
-            print(clientsWeight[-1])
-        return clientsWeight
-
-
-def knapsack(N, V, M, C, W):
-    # 创建一个二维数组来保存动态规划的结果
-    dp = [[0] * (V + 1) for _ in range(N + 1)]
-
-    # 动态规划求解
-    for i in range(1, N + 1):
-        for j in range(1, V + 1):
-            # 考虑第i种物品的情况
-            for k in range(min(M[i - 1], j // C[i - 1]) + 1):
-                dp[i][j] = max(dp[i][j], dp[i - 1][j - k * C[i - 1]] + k * W[i - 1])
-
-    # 回溯找出装入背包的物品
-    selected_items = {}
-    helpers = {}
-    i, j = N, V
-    while i > 0 and j > 0:
-        if dp[i][j] != dp[i - 1][j]:
-            cnt = min(M[i - 1], j // C[i - 1])
-            selected_items[i] = [cnt, cnt * C[i - 1], cnt * W[i - 1]]
-            j -= C[i - 1] * cnt
-        i -= 1
-
-    # 返回最大价值和选中的物品列表
-    return dp[N][V], selected_items
-
-# # 示例数据
-# N = 4  # 物品种类数
-# V = 5  # 背包容量
-# M = [2, 1, 1, 2]  # 每种物品的最大件数
-# C = [1, 2, 3, 2]  # 每件物品的空间消耗
-# W = [3, 2, 4, 2]  # 每件物品的价值
-#
-# # 调用函数求解
-# max_value, selected_items = knapsack(N, V, M, C, W)
-# print(max_value)
-# print(selected_items)

@@ -60,6 +60,7 @@ class Demo:
         return trueLabels
 
     def train(self):
+        self.net_glob.train()
         # 1. 选择设备
         # TODO 设备选择策略
         selected_users = list(np.random.choice(range(self.args.num_users), self.M, replace=False))
