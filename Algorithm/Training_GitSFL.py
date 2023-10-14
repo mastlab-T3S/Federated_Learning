@@ -10,8 +10,6 @@ from Algorithm.Training_ASync import Training_ASync
 from models import Aggregation, LocalUpdate_FedAvg
 from utils.utils import getTrueLabels
 
-AMOUNT_OF_HELPERS = 3
-AMOUNT_OF_ACTIVATION = 50
 COMM_BUDGET = 0.1
 DECAY = 0.5
 
@@ -129,8 +127,8 @@ class GitSFL(Training_ASync):
         # cur_model_client.load_state_dict(w_avg_server)
 
         ###########################################################
-        lens = [1, max(10 + self.modelVersion[modelIdx] - np.mean(self.modelVersion), 2)]
-        w = [copy.deepcopy(self.net_glob.state_dict()), copy.deepcopy(self.repo[modelIdx].state_dict())]
+        lens = [max(10 + self.modelVersion[modelIdx] - np.mean(self.modelVersion), 2), 1]
+        w = [copy.deepcopy(self.repo[modelIdx].state_dict()), copy.deepcopy(self.net_glob.state_dict())]
         w_avg = Aggregation(w, lens)
         self.repo[modelIdx].load_state_dict(w_avg)
 
