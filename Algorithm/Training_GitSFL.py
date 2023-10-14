@@ -6,7 +6,7 @@ import numpy as np
 
 from loguru import logger
 
-from Algorithm.Training_ASync import Training_ASync
+from Algorithm.Training import Training
 from models import Aggregation, LocalUpdate_FedAvg
 from utils.utils import getTrueLabels
 
@@ -15,7 +15,7 @@ DECAY = 0.5
 
 
 @logger.catch
-class GitSFL(Training_ASync):
+class GitSFL(Training):
     def __init__(self, args, net_glob, dataset_train, dataset_test, dict_users, net_glob_client, net_glob_server):
         super().__init__(args, net_glob, dataset_train, dataset_test, dict_users)
 
@@ -24,11 +24,9 @@ class GitSFL(Training_ASync):
         self.repo = [copy.deepcopy(self.net_glob) for _ in range(self.repoSize)]
         self.modelServer = []
         self.modelClient = []
-        self.modelVersion = [0 for _ in range(self.repoSize)]
         self.cumulative_label_distributions = [np.zeros(args.num_classes) for _ in range(self.repoSize)]
         self.cumulative_label_distribution_weight = [0 for _ in range(self.repoSize)]
         self.true_labels = getTrueLabels(self)
-        self.selected_count = [0 for _ in range(args.num_users)]
         self.help_count = [0 for _ in range(args.num_users)]
 
         self.net_glob_client = net_glob_client
@@ -38,42 +36,26 @@ class GitSFL(Training_ASync):
 
     @logger.catch()
     def train(self):
-        init_users = np.random.choice(range(self.args.num_users), self.repoSize, replace=False)
-        for model_index, client_index in enumerate(init_users):
-            # [client_index, modelIndex, model_version, trainTime]
-            self.update_queue.append([client_index, model_index, 0, self.clients.getTime(client_index)])
-            self.idle_clients.remove(client_index)
-            self.selected_count[client_index] += 1
-        self.update_queue.sort(key=lambda x: x[-1])
+        while self.round < self.args.epochs:
+            print("%" * 50)
+            selected_users = np.random.choice(range(self.args.num_users), self.repoSize, replace=False)
+            for modelIndex, client_index in enumerate(selected_users):
+                self.cumulative_label_distribution_weight[modelIndex] = self.cumulative_label_distribution_weight[
+                                                                            modelIndex] * DECAY + 1
+                self.cumulative_label_distributions[modelIndex] = (self.cumulative_label_distributions[
+                                                                       modelIndex] * DECAY +
+                                                                   self.true_labels[client_index]) / \
+                                                                  self.cumulative_label_distribution_weight[modelIndex]
 
-        while self.time < self.args.limit_time:
-            print("*" * 50)
-            client_index, modelIndex, model_version, trainTime = self.update_queue.pop(0)
-            self.modelVersion[modelIndex] += 1
-            for update in self.update_queue:
-                update[-1] -= trainTime
-            self.time += trainTime
-            self.cumulative_label_distribution_weight[modelIndex] = self.cumulative_label_distribution_weight[
-                                                                        modelIndex] * DECAY + 1
-            self.cumulative_label_distributions[modelIndex] = (self.cumulative_label_distributions[modelIndex] * DECAY +
-                                                               self.true_labels[client_index]) / \
-                                                              self.cumulative_label_distribution_weight[modelIndex]
-
-            # self.splitTrain(client_index, modelIndex)
-            self.tempTrain(client_index, modelIndex)
+                # self.splitTrain(client_index, modelIndex)
+                self.tempTrain(client_index, modelIndex)
 
             self.Agg()
 
             self.test()
 
-            self.weakAgg(modelIndex)
-
-            nextClient = self.selectNextClient()
-            self.update_queue.append([nextClient, modelIndex, model_version + 1, self.clients.getTime(nextClient)])
-            self.update_queue.sort(key=lambda x: x[-1])
-            self.selected_count[nextClient] += 1
-            self.idle_clients.remove(nextClient)
-            self.idle_clients.add(client_index)
+            for modelIndex in range(self.repoSize):
+                self.weakAgg(modelIndex)
 
             self.round += 1
 
@@ -107,12 +89,8 @@ class GitSFL(Training_ASync):
 
         #############################################
         w = [copy.deepcopy(model.state_dict()) for model in self.repo]
-        w_avg = Aggregation(w, self.modelVersion)
+        w_avg = Aggregation(w, [1 for _ in range(self.repoSize)])
         self.net_glob.load_state_dict(w_avg)
-
-    def selectNextClient(self) -> int:
-        nextClient = random.choice(list(self.idle_clients))
-        return nextClient
 
     def weakAgg(self, modelIdx: int):
         # cur_model_client = self.modelClient[modelIdx]
@@ -127,7 +105,7 @@ class GitSFL(Training_ASync):
         # cur_model_client.load_state_dict(w_avg_server)
 
         ###########################################################
-        lens = [max(10 + self.modelVersion[modelIdx] - np.mean(self.modelVersion), 2), 1]
+        lens = [10, 1]
         w = [copy.deepcopy(self.repo[modelIdx].state_dict()), copy.deepcopy(self.net_glob.state_dict())]
         w_avg = Aggregation(w, lens)
         self.repo[modelIdx].load_state_dict(w_avg)
@@ -164,6 +142,7 @@ class GitSFL(Training_ASync):
                 provide_data = temp
         self.help_count[helpers] += 1
 
+        print("-----MODEL #{}-----".format(modelIdx))
         print("overall_requirement:\t", overall_requirement)
         print("current_train_data:\t", list(self.true_labels[curClient]))
         print("cumu_label_distri:\t", list(map(int, cumulative_label_distribution)))
