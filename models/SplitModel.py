@@ -1,3 +1,5 @@
+import copy
+
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -18,7 +20,9 @@ class ResBlk(nn.Module):
         )
 
     def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
+        out  = self.conv1(x)
+        out = self.bn1(out)
+        out = F.relu(out)
         out = self.bn2(self.conv2(out))
         out = self.extra(x) + out
         out = F.relu(out)
@@ -35,13 +39,13 @@ class ResNet18_client_side(nn.Module):
         )
         self.layer2 = ResBlk(64, 64, stride=2)
 
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-            elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
+        # for m in self.modules():
+        #     if isinstance(m, nn.Conv2d):
+        #         n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+        #         m.weight.data.normal_(0, math.sqrt(2. / n))
+        #     elif isinstance(m, nn.BatchNorm2d):
+        #         m.weight.data.fill_(1)
+        #         m.bias.data.zero_()
 
     def forward(self, x):
         x = F.relu(self.layer1(x))
@@ -58,13 +62,13 @@ class ResNet18_server_side(nn.Module):
         self.blk4 = ResBlk(256, 512, stride=2)
         self.outlayer = nn.Linear(512 * 1 * 1, 10)
 
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-            elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
+        # for m in self.modules():
+        #     if isinstance(m, nn.Conv2d):
+        #         n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+        #         m.weight.data.normal_(0, math.sqrt(2. / n))
+        #     elif isinstance(m, nn.BatchNorm2d):
+        #         m.weight.data.fill_(1)
+        #         m.bias.data.zero_()
 
     def forward(self, x):
         x = self.blk2(x)
@@ -76,6 +80,18 @@ class ResNet18_server_side(nn.Module):
 
         return x
 
+class Complete_ResNet18(nn.Module):
+    def __init__(self, resNet18_client_side: ResNet18_client_side, resNet18_server_side: ResNet18_server_side, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.resNet18_client_side = copy.deepcopy(resNet18_client_side)
+        self.resNet18_server_side = copy.deepcopy(resNet18_server_side)
+
+    def forward(self, x):
+        result = {}
+        x = self.resNet18_client_side(x)
+        x = self.resNet18_server_side(x)
+        result['output'] = x
+        return result
 
 class VGG16_client_side(nn.Module):
 

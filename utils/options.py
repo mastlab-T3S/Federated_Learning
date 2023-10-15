@@ -82,5 +82,7 @@ def args_parser():
     parser.add_argument('--KD_epoch', default=1, type=int)
     parser.add_argument('--KD_lr', default=0.01, type=float)
 
+    parser.add_argument('--MR', default=0, type=int)
+
     args = parser.parse_args()
     return args

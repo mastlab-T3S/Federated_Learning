@@ -345,7 +345,9 @@ if __name__ == '__main__':
         demo.main()
     elif args.algorithm == "GitSFL":
         net_glob_client = ResNet18_client_side()
+        net_glob_client.to(args.device)
         net_glob_server = ResNet18_server_side()
+        net_glob_server.to(args.device)
         gitsfl = GitSFL(args, net_glob, dataset_train, dataset_test, dict_users, net_glob_client, net_glob_server)
         gitsfl.train()
     else:

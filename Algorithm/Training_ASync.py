@@ -25,7 +25,7 @@ class Training_ASync(Training):
         if avg > self.max_avg:
             self.max_avg = avg
             self.max_std = np.std(temp)
-        logger.info("Round{}, time:{}, acc:{:.2f}, max_avg:{:.2f}, max_std:{:.2f}, loss:{:.2f}",
+        logger.info("Round{}, time:{:.2f}, acc:{:.2f}, max_avg:{:.2f}, max_std:{:.2f}, loss:{:.2f}",
                     self.round, self.time, acc, self.max_avg, self.max_std, loss)
         if self.args.log:
             wandb.log({'acc': acc, 'max_avg': self.max_avg, "max_std": self.max_std, "loss": loss, "time": self.time})

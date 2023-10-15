@@ -7,7 +7,8 @@ import numpy as np
 from loguru import logger
 
 from Algorithm.Training import Training
-from models import Aggregation, LocalUpdate_FedAvg
+from models import Aggregation, LocalUpdate_FedAvg, LocalUpdate_GitSFL
+from models.SplitModel import Complete_ResNet18
 from utils.utils import getTrueLabels
 
 COMM_BUDGET = 0.1
@@ -22,8 +23,8 @@ class GitSFL(Training):
         # GitSFL Setting
         self.repoSize = int(args.num_users * args.frac)
         self.repo = [copy.deepcopy(self.net_glob) for _ in range(self.repoSize)]
-        self.modelServer = []
-        self.modelClient = []
+        self.modelServer = [copy.deepcopy(net_glob_server) for _ in range(self.repoSize)]
+        self.modelClient = [copy.deepcopy(net_glob_client) for _ in range(self.repoSize)]
         self.cumulative_label_distributions = [np.zeros(args.num_classes) for _ in range(self.repoSize)]
         self.cumulative_label_distribution_weight = [0 for _ in range(self.repoSize)]
         self.true_labels = getTrueLabels(self)
@@ -47,11 +48,12 @@ class GitSFL(Training):
                                                                    self.true_labels[client_index]) / \
                                                                   self.cumulative_label_distribution_weight[modelIndex]
 
-                # self.splitTrain(client_index, modelIndex)
-                self.tempTrain(client_index, modelIndex)
+                self.splitTrain(client_index, modelIndex)
+                # self.tempTrain(client_index, modelIndex)
 
             self.Agg()
 
+            self.net_glob = Complete_ResNet18(self.net_glob_client, self.net_glob_server)
             self.test()
 
             for modelIndex in range(self.repoSize):
@@ -62,8 +64,14 @@ class GitSFL(Training):
         print(self.help_count)
 
     def splitTrain(self, curClient: int, modelIdx: int):
-        helpers, provide_data = self.selectHelpers(curClient, modelIdx)
-        # sampledData = [self.sampleData(helper, amount) for helper, amount in helpers.items()]
+        sampledData = None
+        if self.args.MR != 0:
+            helpers, provide_data = self.selectHelpers(curClient, modelIdx)
+            sampledData = self.sampleData(helpers, provide_data)
+
+        local = LocalUpdate_GitSFL(args=self.args, dataset=self.dataset_train, idxs=self.dict_users[curClient],
+                                   helpers_idx=sampledData)
+        local.union_train(self.modelClient[modelIdx], self.modelServer[modelIdx])
 
         pass
 
@@ -76,39 +84,36 @@ class GitSFL(Training):
         self.repo[modelIdx].load_state_dict(w)
 
     def Agg(self):
-        # w_client = [copy.deepcopy(model_client.state_dict) for model_client in self.modelClient]
-        # w_avg_client = Aggregation(w_client, self.modelVersion)
-        # self.net_glob_client.load_state_dict(w_avg_client)
-        #
-        # w_server = [copy.deepcopy(model_server.state_dict) for model_server in self.modelClient]
-        # w_avg_server = Aggregation(w_server, self.modelVersion)
-        # self.net_glob_server.load_state_dict(w_avg_server)
-        #
-        # self.net_glob.load_state_dict(w_avg_client)
-        # self.net_glob.load_state_dict(w_avg_server)
+        w_client = [copy.deepcopy(model_client.state_dict()) for model_client in self.modelClient]
+        w_avg_client = Aggregation(w_client, [1 for _ in range(self.repoSize)])
+        self.net_glob_client.load_state_dict(w_avg_client)
+
+        w_server = [copy.deepcopy(model_server.state_dict()) for model_server in self.modelServer]
+        w_avg_server = Aggregation(w_server, [1 for _ in range(self.repoSize)])
+        self.net_glob_server.load_state_dict(w_avg_server)
 
         #############################################
-        w = [copy.deepcopy(model.state_dict()) for model in self.repo]
-        w_avg = Aggregation(w, [1 for _ in range(self.repoSize)])
-        self.net_glob.load_state_dict(w_avg)
+        # w = [copy.deepcopy(model.state_dict()) for model in self.repo]
+        # w_avg = Aggregation(w, [1 for _ in range(self.repoSize)])
+        # self.net_glob.load_state_dict(w_avg)
 
     def weakAgg(self, modelIdx: int):
-        # cur_model_client = self.modelClient[modelIdx]
-        # w = [copy.deepcopy(self.net_glob_client.state_dict()), copy.deepcopy(cur_model_client)]
-        # lens = [1, max(10 + self.modelVersion[modelIdx] - np.mean(self.modelVersion), 2)]
-        # w_avg_client = Aggregation(w, lens)
-        # cur_model_client.load_state_dict(w_avg_client)
-        #
-        # cur_model_server = self.modelServer[modelIdx]
-        # w = [copy.deepcopy(self.net_glob_server.state_dict()), copy.deepcopy(cur_model_server)]
-        # w_avg_server = Aggregation(w, lens)
-        # cur_model_client.load_state_dict(w_avg_server)
+        cur_model_client = self.modelClient[modelIdx]
+        w = [copy.deepcopy(self.net_glob_client.state_dict()), copy.deepcopy(cur_model_client.state_dict())]
+        lens = [1, 10]
+        w_avg_client = Aggregation(w, lens)
+        cur_model_client.load_state_dict(w_avg_client)
+
+        cur_model_server = self.modelServer[modelIdx]
+        w = [copy.deepcopy(self.net_glob_server.state_dict()), copy.deepcopy(cur_model_server.state_dict())]
+        w_avg_server = Aggregation(w, lens)
+        cur_model_server.load_state_dict(w_avg_server)
 
         ###########################################################
-        lens = [10, 1]
-        w = [copy.deepcopy(self.repo[modelIdx].state_dict()), copy.deepcopy(self.net_glob.state_dict())]
-        w_avg = Aggregation(w, lens)
-        self.repo[modelIdx].load_state_dict(w_avg)
+        # lens = [10, 1]
+        # w = [copy.deepcopy(self.repo[modelIdx].state_dict()), copy.deepcopy(self.net_glob.state_dict())]
+        # w_avg = Aggregation(w, lens)
+        # self.repo[modelIdx].load_state_dict(w_avg)
 
     def sampleData(self, helper: int, provideData: List[int]) -> List[int]:
         # randomSample

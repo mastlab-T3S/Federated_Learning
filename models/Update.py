@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # Python version: 3.6
+import copy
+
+import math
 
 import torch
 from torch import nn, autograd
@@ -29,8 +32,11 @@ class LocalUpdate_FedAvg(object):
         self.args = args
         self.loss_func = nn.CrossEntropyLoss()
         self.selected_clients = []
-        self.ldr_train = DataLoader(DatasetSplit(dataset, idxs), batch_size=self.args.local_bs, shuffle=True,
-                                    drop_last=True)
+        if len(idxs) % args.local_bs != 1:
+            self.ldr_train = DataLoader(DatasetSplit(dataset, idxs), batch_size=self.args.local_bs, shuffle=True)
+        else:
+            self.ldr_train = DataLoader(DatasetSplit(dataset, idxs), batch_size=self.args.local_bs, shuffle=True,
+                                        drop_last=True)
         self.verbose = verbose
 
     def train(self, round, net, requestType="W"):
@@ -449,3 +455,76 @@ class LocalUpdate_FedGen(object):
         net.to('cpu')
 
         return net
+
+
+class LocalUpdate_GitSFL:
+    # 初始化组，参数依次为组内的客户端ID列表，学习率，设备（GPU)，完整的训练集，组内客户端数据索引，batch个数，分组策略
+    def __init__(self, args, dataset=None, idxs=None, helpers_idx=None):
+        self.args = args
+        if len(idxs) % args.local_bs != 1:
+            self.ldr_train = DataLoader(DatasetSplit(dataset, idxs), batch_size=self.args.local_bs, shuffle=True)
+        else:
+            self.ldr_train = DataLoader(DatasetSplit(dataset, idxs), batch_size=self.args.local_bs, shuffle=True,
+                                        drop_last=True)
+        self.ldr_train_helper = []
+        if helpers_idx is not None:
+            self.ldr_train_helper = DataLoader(DatasetSplit(dataset, helpers_idx),
+                                               batch_size=max(math.ceil(len(helpers_idx) / len(self.ldr_train)), 2),
+                                               shuffle=True,
+                                               drop_last=True)
+        self.loss_func = nn.CrossEntropyLoss()
+
+    def union_train(self, net_client, net_server):
+        net_client.train()
+        net_server.train()
+        # train and update
+        optimizer_client = torch.optim.SGD(net_client.parameters(), lr=self.args.lr, momentum=self.args.momentum)
+        optimizer_server = torch.optim.SGD(net_server.parameters(), lr=self.args.lr, momentum=self.args.momentum)
+
+        for iter in range(self.args.local_ep):
+            # 由于每个客户端的batch_len一致，遍历每一个batch
+            for batch_idx, (images, labels) in enumerate(self.ldr_train):
+                # 保存所有数据计算出中间特征
+                all_fx = []
+                # 保存所有数据的label
+                all_labels = torch.tensor([]).to(self.args.device)
+
+                # 计算client的特征
+                images, labels = images.to(self.args.device), labels.to(self.args.device)
+                fx_client = net_client(images)
+                all_fx.append(fx_client)
+                all_labels = torch.cat([all_labels, labels], axis=0)
+
+                # 计算helper的特征
+                # images_helper, labels_helper, fx_helper = None, None, None
+                # if batch_idx < len(self.ldr_train_helper):
+                #     for count, (i, l) in enumerate(self.ldr_train_helper):
+                #         images_helper, labels_helper = i, l
+                #         if count == batch_idx:
+                #             break
+                #     images_helper, labels_helper = images_helper.to(self.args.device), labels_helper.to(
+                #         self.args.device)
+                # if images_helper is not None:
+                #     temp_net = copy.deepcopy(net_client)
+                #     fx_helper = temp_net(images_helper)
+                #     all_fx.append(fx_helper)
+                #     all_labels = torch.cat([all_labels, labels_helper], axis=0)
+
+                net_client.zero_grad()
+
+                fx_to_server = [fx.clone().detach().requires_grad_(True) for fx in all_fx]
+                all_labels = all_labels.to(torch.int64)
+
+                net_server.zero_grad()
+                fx_server = torch.tensor([]).to(self.args.device)
+                for i, fx in enumerate(fx_to_server):
+                    part_fx_server = net_server(fx)
+                    fx_server = torch.cat([fx_server, part_fx_server], axis=0)
+                loss = self.loss_func(fx_server, all_labels)
+                loss.backward()
+                optimizer_server.step()
+
+                all_dfx = [fx.grad.clone().detach() for fx in fx_to_server]
+                for i, fx in enumerate(all_fx):
+                    fx.backward(all_dfx[i])
+                optimizer_client.step()
