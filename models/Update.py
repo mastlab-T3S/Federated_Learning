@@ -32,11 +32,11 @@ class LocalUpdate_FedAvg(object):
         self.args = args
         self.loss_func = nn.CrossEntropyLoss()
         self.selected_clients = []
-        if len(idxs) % args.local_bs != 1:
-            self.ldr_train = DataLoader(DatasetSplit(dataset, idxs), batch_size=self.args.local_bs, shuffle=True)
-        else:
-            self.ldr_train = DataLoader(DatasetSplit(dataset, idxs), batch_size=self.args.local_bs, shuffle=True,
-                                        drop_last=True)
+        # if len(idxs) % args.local_bs != 1:
+        self.ldr_train = DataLoader(DatasetSplit(dataset, idxs), batch_size=self.args.local_bs, shuffle=True)
+        # else:
+        #     self.ldr_train = DataLoader(DatasetSplit(dataset, idxs), batch_size=self.args.local_bs, shuffle=True,
+        #                                 drop_last=True)
         self.verbose = verbose
 
     def train(self, round, net, requestType="W"):
@@ -59,6 +59,8 @@ class LocalUpdate_FedAvg(object):
 
             for batch_idx, (images, labels) in enumerate(self.ldr_train):
                 images, labels = images.to(self.args.device), labels.to(self.args.device)
+                if len(labels) == 1:
+                    pass
                 net.zero_grad()
                 log_probs = net(images)['output']
                 loss = self.loss_func(log_probs, labels)
@@ -461,11 +463,7 @@ class LocalUpdate_GitSFL:
     # 初始化组，参数依次为组内的客户端ID列表，学习率，设备（GPU)，完整的训练集，组内客户端数据索引，batch个数，分组策略
     def __init__(self, args, dataset=None, idxs=None, helpers_idx=None):
         self.args = args
-        if len(idxs) % args.local_bs != 1:
-            self.ldr_train = DataLoader(DatasetSplit(dataset, idxs), batch_size=self.args.local_bs, shuffle=True)
-        else:
-            self.ldr_train = DataLoader(DatasetSplit(dataset, idxs), batch_size=self.args.local_bs, shuffle=True,
-                                        drop_last=True)
+        self.ldr_train = DataLoader(DatasetSplit(dataset, idxs), batch_size=self.args.local_bs, shuffle=True)
         self.ldr_train_helper = []
         if helpers_idx is not None:
             self.ldr_train_helper = DataLoader(DatasetSplit(dataset, helpers_idx),
@@ -496,19 +494,19 @@ class LocalUpdate_GitSFL:
                 all_labels = torch.cat([all_labels, labels], axis=0)
 
                 # 计算helper的特征
-                # images_helper, labels_helper, fx_helper = None, None, None
-                # if batch_idx < len(self.ldr_train_helper):
-                #     for count, (i, l) in enumerate(self.ldr_train_helper):
-                #         images_helper, labels_helper = i, l
-                #         if count == batch_idx:
-                #             break
-                #     images_helper, labels_helper = images_helper.to(self.args.device), labels_helper.to(
-                #         self.args.device)
-                # if images_helper is not None:
-                #     temp_net = copy.deepcopy(net_client)
-                #     fx_helper = temp_net(images_helper)
-                #     all_fx.append(fx_helper)
-                #     all_labels = torch.cat([all_labels, labels_helper], axis=0)
+                images_helper, labels_helper, fx_helper = None, None, None
+                if batch_idx < len(self.ldr_train_helper):
+                    for count, (i, l) in enumerate(self.ldr_train_helper):
+                        images_helper, labels_helper = i, l
+                        if count == batch_idx:
+                            break
+                    images_helper, labels_helper = images_helper.to(self.args.device), labels_helper.to(
+                        self.args.device)
+                if images_helper is not None:
+                    temp_net = copy.deepcopy(net_client)
+                    fx_helper = temp_net(images_helper)
+                    all_fx.append(fx_helper)
+                    all_labels = torch.cat([all_labels, labels_helper], axis=0)
 
                 net_client.zero_grad()
 

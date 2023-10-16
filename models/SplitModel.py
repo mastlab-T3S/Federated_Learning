@@ -9,18 +9,18 @@ import math
 class ResBlk(nn.Module):
     def __init__(self, ch_in, ch_out, stride):
         super(ResBlk, self).__init__()
-        self.conv1 = nn.Conv2d(ch_in, ch_out, kernel_size=3, stride=stride, padding=1)
+        self.conv1 = nn.Conv2d(ch_in, ch_out, kernel_size=3, stride=stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(ch_out)
-        self.conv2 = nn.Conv2d(ch_out, ch_out, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(ch_out, ch_out, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(ch_out)
 
         self.extra = nn.Sequential(
-            nn.Conv2d(ch_in, ch_out, kernel_size=1, stride=stride),
+            nn.Conv2d(ch_in, ch_out, kernel_size=1, stride=stride, bias=False),
             nn.BatchNorm2d(ch_out)
         )
 
     def forward(self, x):
-        out  = self.conv1(x)
+        out = self.conv1(x)
         out = self.bn1(out)
         out = F.relu(out)
         out = self.bn2(self.conv2(out))
@@ -34,18 +34,18 @@ class ResNet18_client_side(nn.Module):
     def __init__(self):
         super(ResNet18_client_side, self).__init__()
         self.layer1 = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, stride=3, padding=0),
+            nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(64)
         )
         self.layer2 = ResBlk(64, 64, stride=2)
 
-        # for m in self.modules():
-        #     if isinstance(m, nn.Conv2d):
-        #         n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-        #         m.weight.data.normal_(0, math.sqrt(2. / n))
-        #     elif isinstance(m, nn.BatchNorm2d):
-        #         m.weight.data.fill_(1)
-        #         m.bias.data.zero_()
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, math.sqrt(2. / n))
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
 
     def forward(self, x):
         x = F.relu(self.layer1(x))
@@ -62,13 +62,13 @@ class ResNet18_server_side(nn.Module):
         self.blk4 = ResBlk(256, 512, stride=2)
         self.outlayer = nn.Linear(512 * 1 * 1, 10)
 
-        # for m in self.modules():
-        #     if isinstance(m, nn.Conv2d):
-        #         n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-        #         m.weight.data.normal_(0, math.sqrt(2. / n))
-        #     elif isinstance(m, nn.BatchNorm2d):
-        #         m.weight.data.fill_(1)
-        #         m.bias.data.zero_()
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, math.sqrt(2. / n))
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
 
     def forward(self, x):
         x = self.blk2(x)
@@ -80,9 +80,10 @@ class ResNet18_server_side(nn.Module):
 
         return x
 
+
 class Complete_ResNet18(nn.Module):
-    def __init__(self, resNet18_client_side: ResNet18_client_side, resNet18_server_side: ResNet18_server_side, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, resNet18_client_side: ResNet18_client_side, resNet18_server_side: ResNet18_server_side):
+        super().__init__()
         self.resNet18_client_side = copy.deepcopy(resNet18_client_side)
         self.resNet18_server_side = copy.deepcopy(resNet18_server_side)
 
@@ -92,6 +93,7 @@ class Complete_ResNet18(nn.Module):
         x = self.resNet18_server_side(x)
         result['output'] = x
         return result
+
 
 class VGG16_client_side(nn.Module):
 
