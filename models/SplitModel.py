@@ -5,6 +5,25 @@ from torch import nn
 import torch.nn.functional as F
 import math
 
+from models.resnetcifar import BasicBlock
+
+
+def _make_layer(block, inplanes, planes, stride=1):
+    norm_layer = nn.BatchNorm2d
+    downsample = None
+    if stride != 1 or inplanes != planes:
+        downsample = nn.Sequential(
+            nn.Conv2d(inplanes, planes, 1, stride, bias=False),
+            norm_layer(planes),
+        )
+
+    layers = []
+    layers.append(block(inplanes, planes, stride, downsample, norm_layer=norm_layer))
+    inplanes = planes
+    layers.append(block(inplanes, planes, norm_layer=norm_layer))
+
+    return nn.Sequential(*layers)
+
 
 class ResBlk(nn.Module):
     def __init__(self, ch_in, ch_out, stride):
@@ -22,7 +41,7 @@ class ResBlk(nn.Module):
     def forward(self, x):
         out = self.conv1(x)
         out = self.bn1(out)
-        out = F.relu(out)
+        out = F.relu(out, inplace=True)
         out = self.bn2(self.conv2(out))
         out = self.extra(x) + out
         out = F.relu(out)
@@ -37,18 +56,20 @@ class ResNet18_client_side(nn.Module):
             nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(64)
         )
-        self.layer2 = ResBlk(64, 64, stride=2)
+        self.relu = nn.ReLU(inplace=True)
+        self.layer2 = _make_layer(BasicBlock, 64, 64, 1)
+
+        # self.layer2 = ResBlk(64, 64, stride=2)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-            elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
-
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
     def forward(self, x):
-        x = F.relu(self.layer1(x))
+        x = self.layer1(x)
+        x = self.relu(x)
         x = self.layer2(x)
         return x
 
@@ -57,24 +78,27 @@ class ResNet18_client_side(nn.Module):
 class ResNet18_server_side(nn.Module):
     def __init__(self):
         super(ResNet18_server_side, self).__init__()
-        self.blk2 = ResBlk(64, 128, stride=2)
-        self.blk3 = ResBlk(128, 256, stride=2)
-        self.blk4 = ResBlk(256, 512, stride=2)
+        self.blk2 = _make_layer(BasicBlock, 64, 128, 2)
+        self.blk3 = _make_layer(BasicBlock, 128, 256, 2)
+        self.blk4 = _make_layer(BasicBlock, 256, 512, 2)
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.outlayer = nn.Linear(512 * 1 * 1, 10)
+        # self.blk2 = ResBlk(64, 128, stride=2)
+        # self.blk3 = ResBlk(128, 256, stride=2)
+        # self.blk4 = ResBlk(256, 512, stride=2)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-            elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
         x = self.blk2(x)
         x = self.blk3(x)
         x = self.blk4(x)
-        x = F.adaptive_avg_pool2d(x, [1, 1])
+        x = self.avgpool(x)
         x = x.view(x.size(0), -1)
         x = self.outlayer(x)
 
@@ -84,8 +108,8 @@ class ResNet18_server_side(nn.Module):
 class Complete_ResNet18(nn.Module):
     def __init__(self, resNet18_client_side: ResNet18_client_side, resNet18_server_side: ResNet18_server_side):
         super().__init__()
-        self.resNet18_client_side = copy.deepcopy(resNet18_client_side)
-        self.resNet18_server_side = copy.deepcopy(resNet18_server_side)
+        self.resNet18_client_side = resNet18_client_side
+        self.resNet18_server_side = resNet18_server_side
 
     def forward(self, x):
         result = {}

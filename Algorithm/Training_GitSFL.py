@@ -3,6 +3,7 @@ import random
 from typing import List
 
 import numpy as np
+import torch
 
 from loguru import logger
 
@@ -21,6 +22,8 @@ class GitSFL(Training):
         super().__init__(args, net_glob, dataset_train, dataset_test, dict_users)
 
         # GitSFL Setting
+        # self.net_glob = Complete_ResNet18(net_glob_client, net_glob_server)
+        self.comm_budget = COMM_BUDGET
         self.repoSize = int(args.num_users * args.frac)
         self.repo = [copy.deepcopy(self.net_glob) for _ in range(self.repoSize)]
         self.modelServer = [copy.deepcopy(net_glob_server) for _ in range(self.repoSize)]
@@ -48,8 +51,10 @@ class GitSFL(Training):
                                                                    self.true_labels[client_index]) / \
                                                                   self.cumulative_label_distribution_weight[modelIndex]
 
+                self.adjustBudget()
+
                 self.splitTrain(client_index, modelIndex)
-                # self.tempTrain(client_index, modelIndex)
+                # self.normalTrain(client_index, modelIndex)
 
             self.Agg()
 
@@ -61,7 +66,8 @@ class GitSFL(Training):
 
             self.round += 1
 
-        print(self.help_count)
+            if self.args.MR != 0:
+                print(self.help_count)
 
     def splitTrain(self, curClient: int, modelIdx: int):
         sampledData = None
@@ -72,13 +78,14 @@ class GitSFL(Training):
         local = LocalUpdate_GitSFL(args=self.args, dataset=self.dataset_train, idxs=self.dict_users[curClient],
                                    helpers_idx=sampledData)
         local.union_train(self.modelClient[modelIdx], self.modelServer[modelIdx])
-
         pass
 
-    def tempTrain(self, curClient: int, modelIdx: int):
-        helpers, provide_data = self.selectHelpers(curClient, modelIdx)
-        sampledData = self.sampleData(helpers, provide_data)
-        sampledData.extend(self.dict_users[curClient])
+    def normalTrain(self, curClient: int, modelIdx: int):
+        sampledData = self.dict_users[curClient]
+        if self.args.MR == 1:
+            helpers, provide_data = self.selectHelpers(curClient, modelIdx)
+            sampledData = self.sampleData(helpers, provide_data)
+            sampledData.extend(self.dict_users[curClient])
         local = LocalUpdate_FedAvg(args=self.args, dataset=self.dataset_train, idxs=sampledData, verbose=False)
         w = local.train(round=self.round, net=copy.deepcopy(self.repo[modelIdx]).to(self.args.device))
         self.repo[modelIdx].load_state_dict(w)
@@ -135,16 +142,24 @@ class GitSFL(Training):
         candidate = list(range(self.args.num_users))
         candidate.pop(curClient)
         random.shuffle(candidate)
+        weight = []
+        data = []
         for client in candidate:
             contribution = 0
             temp = []
             for classIdx, label in enumerate(self.true_labels[client]):
                 contribution += min(label, requirement_classes[classIdx])
                 temp.append(min(label, requirement_classes[classIdx]))
+
+            weight.append(contribution ** 2)
+            data.append(temp)
+
             if contribution > max_contribution:
                 max_contribution = contribution
                 helpers = client
                 provide_data = temp
+        helpers = random.choices(candidate, weights=weight)[0]
+        provide_data = data[candidate.index(helpers)]
         self.help_count[helpers] += 1
 
         print("-----MODEL #{}-----".format(modelIdx))
@@ -153,9 +168,26 @@ class GitSFL(Training):
         print("cumu_label_distri:\t", list(map(int, cumulative_label_distribution)))
         print("prior_of_classes:\t", list(map(int, prior_of_classes)))
         print("required_classes:\t", requirement_classes)
-        print("selected_helper:\t", list(self.true_labels[helpers]))
         print("total_provide_data:\t", provide_data)
+        print("selected_helper:\t", list(self.true_labels[helpers]))
+        print("overall_supplement:\t", sum(provide_data))
         return helpers, provide_data
+
+    def detectCLP(self) -> bool:
+        pass
+
+    def adjustBudget(self):
+        CLP = self.detectCLP()
+        global COMM_BUDGET
+        if self.round < 100:
+            COMM_BUDGET = 0.2
+        elif self.round < 200:
+            COMM_BUDGET = 0.15
+        elif self.round < 500:
+            COMM_BUDGET = 0.1
+        else:
+            COMM_BUDGET = 0
+        pass
 
     def organizeDataByLabel(self) -> list[list[list[int]]]:
         organized = []
