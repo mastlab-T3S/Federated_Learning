@@ -35,10 +35,10 @@ class GitSFL(Training):
         self.cumulative_label_distribution_weight = [0 for _ in range(self.repoSize)]
         self.true_labels = getTrueLabels(self)
         self.help_count = [0 for _ in range(args.num_users)]
+        self.weakAggWeight = [1 for _ in range(self.repoSize)]
 
-        self.FGN = [0 for _ in range(self.repoSize)]
-        self.modelServer_Pre = [copy.deepcopy(net_glob_server) for _ in range(self.repoSize)]
-        self.modelClient_Pre = [copy.deepcopy(net_glob_client) for _ in range(self.repoSize)]
+        self.grad_norm = [[0] * 12 for _ in range(self.repoSize)]
+        self.Win = 10
 
         self.net_glob_client = net_glob_client
         self.net_glob_server = net_glob_server
@@ -58,7 +58,7 @@ class GitSFL(Training):
                                                                    self.true_labels[client_index]) / \
                                                                   self.cumulative_label_distribution_weight[modelIndex]
 
-                self.adjustBudget(modelIndex)
+                self.adjustBudget(modelIndex, client_index)
 
                 self.splitTrain(client_index, modelIndex)
                 # self.normalTrain(client_index, modelIndex)
@@ -84,8 +84,8 @@ class GitSFL(Training):
 
         local = LocalUpdate_GitSFL(args=self.args, dataset=self.dataset_train, idxs=self.dict_users[curClient],
                                    helpers_idx=sampledData)
-        local.union_train(self.modelClient[modelIdx], self.modelServer[modelIdx])
-        pass
+        mean_grad_norm = local.union_train(self.modelClient[modelIdx], self.modelServer[modelIdx])
+        self.grad_norm[modelIdx].append(mean_grad_norm)
 
     def normalTrain(self, curClient: int, modelIdx: int):
         sampledData = self.dict_users[curClient]
@@ -114,7 +114,7 @@ class GitSFL(Training):
     def weakAgg(self, modelIdx: int):
         cur_model_client = self.modelClient[modelIdx]
         w = [copy.deepcopy(self.net_glob_client.state_dict()), copy.deepcopy(cur_model_client.state_dict())]
-        lens = [1, 10]
+        lens = [self.weakAggWeight[modelIdx], 10]
         w_avg_client = Aggregation(w, lens)
         cur_model_client.load_state_dict(w_avg_client)
 
@@ -181,26 +181,18 @@ class GitSFL(Training):
         return helpers, provide_data
 
     def detectCLP(self, modelIdx) -> bool:
-        model = Complete_ResNet18(self.modelClient[modelIdx], self.modelServer[modelIdx])
-        preModel = Complete_ResNet18(self.modelClient_Pre[modelIdx], self.modelServer_Pre[modelIdx])
-        grads = self.getGrad(model, preModel)
-        FGN_cur = 0
-        for k in grads.keys():
-            FGN_cur += torch.norm(grads[k])
-        FGN_cur = FGN_cur * -self.args.lr
-        FGN_pre = self.FGN[modelIdx]
-        if modelIdx == 0 and FGN_pre != 0:
-            wandb.log({"round": self.round, "FGN": FGN_cur, "delta": (FGN_cur - FGN_pre) / FGN_pre})
-        if FGN_pre != 0 and (FGN_cur - FGN_pre) / FGN_pre > DELTA:
-            self.FGN[modelIdx] = FGN_cur
+        OldNorm = max([np.mean(self.grad_norm[modelIdx][-self.Win - 1:-1]), 0.0000001])
+        NewNorm = np.mean(self.grad_norm[modelIdx][-self.Win:])
+        delta = (NewNorm - OldNorm) / OldNorm
+        self.weakAggWeight[modelIdx] = 1 - delta
+        # if modelIdx == 0 and OldNorm != 0:
+        #     wandb.log({"round": self.round, "FGN": NewNorm, "delta": (NewNorm - OldNorm) / OldNorm})
+        if delta > DELTA:
             return True
-        self.FGN[modelIdx] = FGN_cur
         return False
 
-    def adjustBudget(self, modelIdx):
+    def adjustBudget(self, modelIdx, clientIdx):
         CLP = self.detectCLP(modelIdx)
-        self.modelServer_Pre[modelIdx] = copy.deepcopy(self.modelServer[modelIdx])
-        self.modelClient_Pre[modelIdx] = copy.deepcopy(self.modelClient[modelIdx])
         global COMM_BUDGET
         if self.round < 100:
             COMM_BUDGET = 0.2
@@ -221,11 +213,3 @@ class GitSFL(Training):
                 res[self.dataset_train[data][1]].append(data)
             organized.append(res)
         return organized
-
-    def getGrad(self, model: nn.Module, preModel: nn.Module) -> dict[str, Any]:
-        with torch.no_grad():
-            delta = copy.deepcopy(model.state_dict())
-            w = preModel.state_dict()
-            for k in w.keys():
-                delta[k] = (delta[k] - w[k]) / self.args.lr
-        return delta

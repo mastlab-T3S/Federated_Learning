@@ -478,8 +478,9 @@ class LocalUpdate_GitSFL:
         # train and update
         optimizer_client = torch.optim.SGD(net_client.parameters(), lr=self.args.lr, momentum=self.args.momentum)
         optimizer_server = torch.optim.SGD(net_server.parameters(), lr=self.args.lr, momentum=self.args.momentum)
-
+        GNorm = []
         for iter in range(self.args.local_ep):
+            grad_norm = 0
             # 由于每个客户端的batch_len一致，遍历每一个batch
             for batch_idx, (images, labels) in enumerate(self.ldr_train):
                 # 保存所有数据计算出中间特征
@@ -526,3 +527,16 @@ class LocalUpdate_GitSFL:
                 for i, fx in enumerate(all_fx):
                     fx.backward(all_dfx[i])
                 optimizer_client.step()
+
+                temp_norm = 0
+                for parms in net_client.parameters():
+                    gnorm = parms.grad.detach().data.norm(2)
+                    temp_norm = temp_norm + (gnorm.item()) ** 2
+                grad_norm = grad_norm + temp_norm
+
+                for parms in net_server.parameters():
+                    gnorm = parms.grad.detach().data.norm(2)
+                    temp_norm = temp_norm + (gnorm.item()) ** 2
+                grad_norm = grad_norm + temp_norm
+            GNorm.append(grad_norm)
+        return np.mean(GNorm) * self.args.lr
