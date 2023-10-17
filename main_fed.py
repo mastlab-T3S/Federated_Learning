@@ -4,7 +4,6 @@
 
 import matplotlib
 
-from Algorithm.Training_Demo import Demo
 from Algorithm.Training_GitSFL import GitSFL
 from models.SplitModel import ResNet18_client_side, ResNet18_server_side
 
@@ -333,16 +332,6 @@ if __name__ == '__main__':
         FedMLB(args, net_glob, dataset_train, dataset_test, dict_users)
     elif args.algorithm == 'FedNTD':
         FedNTD(args, net_glob, dataset_train, dataset_test, dict_users)
-    elif args.algorithm == 'demo':
-        proxy_dict = list(np.random.choice(range(50000), 500, replace=False))
-        proxy_set = set(proxy_dict)
-        for client_idx in range(100):
-            dic = dict_users[client_idx]
-            for i in dic:
-                if i in proxy_set:
-                    dic.remove(i)
-        demo = Demo(args, dataset_train, dataset_test, proxy_dict, net_glob, dict_users)
-        demo.main()
     elif args.algorithm == "GitSFL":
         net_glob_client = ResNet18_client_side()
         net_glob_client.to(args.device)

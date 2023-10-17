@@ -35,6 +35,4 @@ class Training:
         logger.info("Round{}, acc:{:.2f}, max_avg:{:.2f}, max_std:{:.2f}, loss:{:.2f}",
                     self.round, acc, self.max_avg, self.max_std, loss)
         if self.args.log:
-            wandb.log({'acc': acc, 'max_avg': self.max_avg, "max_std": self.max_std, "loss": loss})
-
-
+            wandb.log({"round": self.round, 'acc': acc, 'max_avg': self.max_avg, "max_std": self.max_std, "loss": loss})

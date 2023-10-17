@@ -1,11 +1,13 @@
 import copy
 import random
-from typing import List
+from typing import List, OrderedDict, Dict, Any
 
 import numpy as np
 import torch
+import wandb
 
 from loguru import logger
+from torch import nn
 
 from Algorithm.Training import Training
 from models import Aggregation, LocalUpdate_FedAvg, LocalUpdate_GitSFL
@@ -14,6 +16,7 @@ from utils.utils import getTrueLabels
 
 COMM_BUDGET = 0.1
 DECAY = 0.5
+DELTA = 0.01
 
 
 @logger.catch
@@ -33,6 +36,10 @@ class GitSFL(Training):
         self.true_labels = getTrueLabels(self)
         self.help_count = [0 for _ in range(args.num_users)]
 
+        self.FGN = [0 for _ in range(self.repoSize)]
+        self.modelServer_Pre = [copy.deepcopy(net_glob_server) for _ in range(self.repoSize)]
+        self.modelClient_Pre = [copy.deepcopy(net_glob_client) for _ in range(self.repoSize)]
+
         self.net_glob_client = net_glob_client
         self.net_glob_server = net_glob_server
 
@@ -51,7 +58,7 @@ class GitSFL(Training):
                                                                    self.true_labels[client_index]) / \
                                                                   self.cumulative_label_distribution_weight[modelIndex]
 
-                self.adjustBudget()
+                self.adjustBudget(modelIndex)
 
                 self.splitTrain(client_index, modelIndex)
                 # self.normalTrain(client_index, modelIndex)
@@ -173,11 +180,27 @@ class GitSFL(Training):
         print("overall_supplement:\t", sum(provide_data))
         return helpers, provide_data
 
-    def detectCLP(self) -> bool:
-        pass
+    def detectCLP(self, modelIdx) -> bool:
+        model = Complete_ResNet18(self.modelClient[modelIdx], self.modelServer[modelIdx])
+        preModel = Complete_ResNet18(self.modelClient_Pre[modelIdx], self.modelServer_Pre[modelIdx])
+        grads = self.getGrad(model, preModel)
+        FGN_cur = 0
+        for k in grads.keys():
+            FGN_cur += torch.norm(grads[k])
+        FGN_cur = FGN_cur * -self.args.lr
+        FGN_pre = self.FGN[modelIdx]
+        if modelIdx == 0 and FGN_pre != 0:
+            wandb.log({"round": self.round, "FGN": FGN_cur, "delta": (FGN_cur - FGN_pre) / FGN_pre})
+        if FGN_pre != 0 and (FGN_cur - FGN_pre) / FGN_pre > DELTA:
+            self.FGN[modelIdx] = FGN_cur
+            return True
+        self.FGN[modelIdx] = FGN_cur
+        return False
 
-    def adjustBudget(self):
-        CLP = self.detectCLP()
+    def adjustBudget(self, modelIdx):
+        CLP = self.detectCLP(modelIdx)
+        self.modelServer_Pre[modelIdx] = copy.deepcopy(self.modelServer[modelIdx])
+        self.modelClient_Pre[modelIdx] = copy.deepcopy(self.modelClient[modelIdx])
         global COMM_BUDGET
         if self.round < 100:
             COMM_BUDGET = 0.2
@@ -198,3 +221,11 @@ class GitSFL(Training):
                 res[self.dataset_train[data][1]].append(data)
             organized.append(res)
         return organized
+
+    def getGrad(self, model: nn.Module, preModel: nn.Module) -> dict[str, Any]:
+        with torch.no_grad():
+            delta = copy.deepcopy(model.state_dict())
+            w = preModel.state_dict()
+            for k in w.keys():
+                delta[k] = (delta[k] - w[k]) / self.args.lr
+        return delta
