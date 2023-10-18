@@ -1,13 +1,11 @@
 import copy
 import random
-from typing import List, OrderedDict, Dict, Any
+from typing import List
 
 import numpy as np
-import torch
 import wandb
 
 from loguru import logger
-from torch import nn
 
 from Algorithm.Training import Training
 from models import Aggregation, LocalUpdate_FedAvg, LocalUpdate_GitSFL
@@ -17,6 +15,7 @@ from utils.utils import getTrueLabels
 COMM_BUDGET = 0.1
 DECAY = 0.5
 DELTA = 0.01
+WIN = 10
 
 
 @logger.catch
@@ -37,8 +36,9 @@ class GitSFL(Training):
         self.help_count = [0 for _ in range(args.num_users)]
         self.weakAggWeight = [1 for _ in range(self.repoSize)]
 
-        self.grad_norm = [[0] * 12 for _ in range(self.repoSize)]
-        self.Win = 10
+        self.grad_norm = [0 for _ in range(self.repoSize)]
+        self.fed_grad_norm = [0 for _ in range(WIN + 2)]
+        self.win = WIN
 
         self.net_glob_client = net_glob_client
         self.net_glob_server = net_glob_server
@@ -58,11 +58,9 @@ class GitSFL(Training):
                                                                    self.true_labels[client_index]) / \
                                                                   self.cumulative_label_distribution_weight[modelIndex]
 
-                self.adjustBudget(modelIndex, client_index)
-
                 self.splitTrain(client_index, modelIndex)
                 # self.normalTrain(client_index, modelIndex)
-
+            self.adjustBudget()
             self.Agg()
 
             self.net_glob = Complete_ResNet18(self.net_glob_client, self.net_glob_server)
@@ -85,7 +83,7 @@ class GitSFL(Training):
         local = LocalUpdate_GitSFL(args=self.args, dataset=self.dataset_train, idxs=self.dict_users[curClient],
                                    helpers_idx=sampledData)
         mean_grad_norm = local.union_train(self.modelClient[modelIdx], self.modelServer[modelIdx])
-        self.grad_norm[modelIdx].append(mean_grad_norm)
+        self.grad_norm[modelIdx] = mean_grad_norm
 
     def normalTrain(self, curClient: int, modelIdx: int):
         sampledData = self.dict_users[curClient]
@@ -114,7 +112,7 @@ class GitSFL(Training):
     def weakAgg(self, modelIdx: int):
         cur_model_client = self.modelClient[modelIdx]
         w = [copy.deepcopy(self.net_glob_client.state_dict()), copy.deepcopy(cur_model_client.state_dict())]
-        lens = [self.weakAggWeight[modelIdx], 10]
+        lens = [1, 10]
         w_avg_client = Aggregation(w, lens)
         cur_model_client.load_state_dict(w_avg_client)
 
@@ -170,7 +168,7 @@ class GitSFL(Training):
         self.help_count[helpers] += 1
 
         print("-----MODEL #{}-----".format(modelIdx))
-        print("overall_requirement:\t", overall_requirement)
+        print("overall_requirement:\t", sum(requirement_classes))
         print("current_train_data:\t", list(self.true_labels[curClient]))
         print("cumu_label_distri:\t", list(map(int, cumulative_label_distribution)))
         print("prior_of_classes:\t", list(map(int, prior_of_classes)))
@@ -180,19 +178,17 @@ class GitSFL(Training):
         print("overall_supplement:\t", sum(provide_data))
         return helpers, provide_data
 
-    def detectCLP(self, modelIdx) -> bool:
-        OldNorm = max([np.mean(self.grad_norm[modelIdx][-self.Win - 1:-1]), 0.0000001])
-        NewNorm = np.mean(self.grad_norm[modelIdx][-self.Win:])
+    def detectCLP(self) -> bool:
+        self.fed_grad_norm.append(np.mean(self.grad_norm))
+        OldNorm = max([np.mean(self.fed_grad_norm[-self.win - 1:-1]), 0.0000001])
+        NewNorm = np.mean(self.fed_grad_norm[-self.win:])
         delta = (NewNorm - OldNorm) / OldNorm
-        self.weakAggWeight[modelIdx] = 1 - delta
-        # if modelIdx == 0 and OldNorm != 0:
-        #     wandb.log({"round": self.round, "FGN": NewNorm, "delta": (NewNorm - OldNorm) / OldNorm})
-        if delta > DELTA:
-            return True
-        return False
+        # self.weakAggWeight[modelIdx] = 1 - delta
+        wandb.log({"round": self.round, "FGN": NewNorm, "delta": delta})
+        return delta > DELTA
 
-    def adjustBudget(self, modelIdx, clientIdx):
-        CLP = self.detectCLP(modelIdx)
+    def adjustBudget(self):
+        CLP = self.detectCLP()
         global COMM_BUDGET
         if self.round < 100:
             COMM_BUDGET = 0.2

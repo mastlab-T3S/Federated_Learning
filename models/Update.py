@@ -476,8 +476,10 @@ class LocalUpdate_GitSFL:
         net_client.train()
         net_server.train()
         # train and update
-        optimizer_client = torch.optim.SGD(net_client.parameters(), lr=self.args.lr, momentum=self.args.momentum)
-        optimizer_server = torch.optim.SGD(net_server.parameters(), lr=self.args.lr, momentum=self.args.momentum)
+        optimizer_client = torch.optim.SGD(net_client.parameters(), lr=self.args.lr, momentum=self.args.momentum,
+                                           weight_decay=self.args.weight_decay)
+        optimizer_server = torch.optim.SGD(net_server.parameters(), lr=self.args.lr, momentum=self.args.momentum,
+                                           weight_decay=self.args.weight_decay)
         GNorm = []
         for iter in range(self.args.local_ep):
             grad_norm = 0
