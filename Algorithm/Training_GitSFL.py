@@ -12,7 +12,7 @@ from models import Aggregation, LocalUpdate_FedAvg, LocalUpdate_GitSFL
 from models.SplitModel import Complete_ResNet18
 from utils.utils import getTrueLabels
 
-COMM_BUDGET = 0.127
+COMM_BUDGET = 0.01
 BUDGET_THRESHOLD = 0.2
 DECAY = 0.5
 DELTA = 0
