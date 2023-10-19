@@ -26,7 +26,7 @@ def args_parser():
     parser.add_argument("--data_augmentation", type=int, default=0)
     parser.add_argument("--cifar100_coarse", type=int, default=1)
     parser.add_argument("--dynamic_lr", type=int, default=0)
-    parser.add_argument("--log", type=int, default=0)
+    parser.add_argument("--wandb", type=int, default=0)
 
     # model arguments
     parser.add_argument('--model', type=str, default='resnet', help='model name')

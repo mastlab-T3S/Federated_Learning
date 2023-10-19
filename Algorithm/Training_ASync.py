@@ -19,8 +19,8 @@ class Training_ASync(Training):
 
     def test(self):
         acc, loss = test(self.net_glob, self.dataset_test, self.args)
-        self.acc.append(acc)
-        temp = self.acc[max(0, len(self.acc) - 10)::]
+        self.acc_list.append(acc)
+        temp = self.acc_list[max(0, len(self.acc_list) - 10)::]
         avg = np.mean(temp)
         if avg > self.max_avg:
             self.max_avg = avg

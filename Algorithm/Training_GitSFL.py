@@ -12,9 +12,10 @@ from models import Aggregation, LocalUpdate_FedAvg, LocalUpdate_GitSFL
 from models.SplitModel import Complete_ResNet18
 from utils.utils import getTrueLabels
 
-COMM_BUDGET = 0.1
+COMM_BUDGET = 0.127
+BUDGET_THRESHOLD = 0.2
 DECAY = 0.5
-DELTA = 0.01
+DELTA = 0
 WIN = 10
 
 
@@ -39,6 +40,8 @@ class GitSFL(Training):
         self.grad_norm = [0 for _ in range(self.repoSize)]
         self.fed_grad_norm = [0 for _ in range(WIN + 2)]
         self.win = WIN
+        self.helper_overhead = 0
+        self.client_overhead = 0
 
         self.net_glob_client = net_glob_client
         self.net_glob_server = net_glob_server
@@ -65,6 +68,7 @@ class GitSFL(Training):
 
             self.net_glob = Complete_ResNet18(self.net_glob_client, self.net_glob_server)
             self.test()
+            self.log()
 
             for modelIndex in range(self.repoSize):
                 self.weakAgg(modelIndex)
@@ -127,55 +131,77 @@ class GitSFL(Training):
         # w_avg = Aggregation(w, lens)
         # self.repo[modelIdx].load_state_dict(w_avg)
 
-    def sampleData(self, helper: int, provideData: List[int]) -> List[int]:
+    def sampleData(self, helpers: List[int], provideData: List[List[int]]) -> List[int]:
         # randomSample
         sampledData = []
-        for classIdx, num in enumerate(provideData):
-            sampledData.extend(random.sample(self.dataByLabel[helper][classIdx], num))
+        for i, helper in enumerate(helpers):
+            for classIdx, num in enumerate(provideData[i]):
+                sampledData.extend(random.sample(self.dataByLabel[helper][classIdx], num))
         return sampledData
 
-    def selectHelpers(self, curClient: int, modelIdx: int) -> tuple[int, List[int]]:
+    def selectHelpers(self, curClient: int, modelIdx: int):
         overall_requirement = max(10, int(len(self.dict_users[curClient]) * COMM_BUDGET))
         cumulative_label_distribution = self.cumulative_label_distributions[modelIdx]
         prior_of_classes = [max(np.mean(cumulative_label_distribution) - label, 0)
                             for label in cumulative_label_distribution]
         requirement_classes = [int(overall_requirement * (prior / sum(prior_of_classes))) for prior in prior_of_classes]
+        required = requirement_classes[::]
 
-        helpers = 200
+        helpers = []
         provide_data = []
-        max_contribution = 0
         candidate = list(range(self.args.num_users))
         candidate.pop(curClient)
         random.shuffle(candidate)
-        weight = []
-        data = []
         for client in candidate:
-            contribution = 0
+            if sum(requirement_classes) == 0:
+                break
             temp = []
             for classIdx, label in enumerate(self.true_labels[client]):
-                contribution += min(label, requirement_classes[classIdx])
                 temp.append(min(label, requirement_classes[classIdx]))
+                requirement_classes[classIdx] -= min(label, requirement_classes[classIdx])
+            if sum(temp) > 0:
+                self.help_count[client] += 1
+                helpers.append(client)
+                provide_data.append(temp)
 
-            weight.append(contribution ** 2)
-            data.append(temp)
+        self.helper_overhead += overall_requirement
+        self.client_overhead += len(self.dict_users[curClient])
 
-            if contribution > max_contribution:
-                max_contribution = contribution
-                helpers = client
-                provide_data = temp
-        helpers = random.choices(candidate, weights=weight)[0]
-        provide_data = data[candidate.index(helpers)]
-        self.help_count[helpers] += 1
+        # helpers = 200
+        # provide_data = []
+        # max_contribution = 0
+        # candidate = list(range(self.args.num_users))
+        # candidate.pop(curClient)
+        # random.shuffle(candidate)
+        # weight = []
+        # data = []
+        # for client in candidate:
+        #     contribution = 0
+        #     temp = []
+        #     for classIdx, label in enumerate(self.true_labels[client]):
+        #         contribution += min(label, requirement_classes[classIdx])
+        #         temp.append(min(label, requirement_classes[classIdx]))
+        #
+        #     # weight.append(contribution ** 2)
+        #     # data.append(temp)
+        #
+        #     if contribution > max_contribution:
+        #         max_contribution = contribution
+        #         helpers = client
+        #         provide_data = temp
+        # helpers = random.choices(candidate, weights=weight)[0]
+        # provide_data = data[candidate.index(helpers)]
+        # self.help_count[helpers] += 1
 
         print("-----MODEL #{}-----".format(modelIdx))
-        print("overall_requirement:\t", sum(requirement_classes))
+        print("overall_requirement:\t", overall_requirement)
         print("current_train_data:\t", list(self.true_labels[curClient]))
         print("cumu_label_distri:\t", list(map(int, cumulative_label_distribution)))
         print("prior_of_classes:\t", list(map(int, prior_of_classes)))
-        print("required_classes:\t", requirement_classes)
+        print("required_classes:\t", required)
         print("total_provide_data:\t", provide_data)
-        print("selected_helper:\t", list(self.true_labels[helpers]))
-        print("overall_supplement:\t", sum(provide_data))
+        # print("selected_helper:\t", list(self.true_labels[helpers]))
+        # print("overall_supplement:\t", sum(provide_data))
         return helpers, provide_data
 
     def detectCLP(self) -> bool:
@@ -184,20 +210,30 @@ class GitSFL(Training):
         NewNorm = np.mean(self.fed_grad_norm[-self.win:])
         delta = (NewNorm - OldNorm) / OldNorm
         # self.weakAggWeight[modelIdx] = 1 - delta
-        wandb.log({"round": self.round, "FGN": NewNorm, "delta": delta})
+        # wandb.log({"round": self.round, "FGN": NewNorm, "delta": delta})
         return delta > DELTA
 
     def adjustBudget(self):
-        CLP = self.detectCLP()
-        global COMM_BUDGET
-        if self.round < 100:
-            COMM_BUDGET = 0.2
-        elif self.round < 200:
-            COMM_BUDGET = 0.15
-        elif self.round < 500:
-            COMM_BUDGET = 0.1
-        else:
-            COMM_BUDGET = 0
+        # global COMM_BUDGET
+        # CLP = self.detectCLP()
+        # if CLP:
+        #     if COMM_BUDGET >= BUDGET_THRESHOLD:
+        #         COMM_BUDGET += 0.01
+        #     else:
+        #         # COMM_BUDGET = min(BUDGET_THRESHOLD, COMM_BUDGET * 2)
+        #         COMM_BUDGET = COMM_BUDGET * 2
+        #
+        # else:
+        #     COMM_BUDGET = max(0.01, COMM_BUDGET/2)
+        #
+        # if self.round < 100:
+        #     COMM_BUDGET = 0.2
+        # elif self.round < 200:
+        #     COMM_BUDGET = 0.15
+        # elif self.round < 500:
+        #     COMM_BUDGET = 0.1
+        # else:
+        #     COMM_BUDGET = 0
         pass
 
     def organizeDataByLabel(self) -> list[list[list[int]]]:
@@ -209,3 +245,12 @@ class GitSFL(Training):
                 res[self.dataset_train[data][1]].append(data)
             organized.append(res)
         return organized
+
+    def log(self):
+        logger.info("Round{}, acc:{:.2f}, max_avg:{:.2f}, max_std:{:.2f}, loss:{:.2f}, comm:{:.2f}, budget:{:.2f}",
+                    self.round, self.acc, self.max_avg, self.max_std,
+                    self.loss, (self.helper_overhead / self.client_overhead), COMM_BUDGET)
+        if self.args.wandb:
+            wandb.log({"round": self.round, 'acc': self.acc, 'max_avg': self.max_avg,
+                       "max_std": self.max_std, "loss": self.loss,
+                       "comm": (self.helper_overhead / self.client_overhead), "budget": COMM_BUDGET})
