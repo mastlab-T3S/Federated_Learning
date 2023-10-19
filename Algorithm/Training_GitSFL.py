@@ -28,6 +28,7 @@ class GitSFL(Training):
         # self.net_glob = Complete_ResNet18(net_glob_client, net_glob_server)
         self.comm_budget = COMM_BUDGET
         self.repoSize = int(args.num_users * args.frac)
+        self.budget_list = [COMM_BUDGET for _ in range(self.repoSize)]
         self.repo = [copy.deepcopy(self.net_glob) for _ in range(self.repoSize)]
         self.modelServer = [copy.deepcopy(net_glob_server) for _ in range(self.repoSize)]
         self.modelClient = [copy.deepcopy(net_glob_client) for _ in range(self.repoSize)]
@@ -37,7 +38,7 @@ class GitSFL(Training):
         self.help_count = [0 for _ in range(args.num_users)]
         self.weakAggWeight = [1 for _ in range(self.repoSize)]
 
-        self.grad_norm = [0 for _ in range(self.repoSize)]
+        self.grad_norm = [[0] * (WIN + 2) for _ in range(self.repoSize)]
         self.fed_grad_norm = [0 for _ in range(WIN + 2)]
         self.win = WIN
         self.helper_overhead = 0
@@ -62,8 +63,9 @@ class GitSFL(Training):
                                                                   self.cumulative_label_distribution_weight[modelIndex]
 
                 self.splitTrain(client_index, modelIndex)
+                self.adjustBudget(modelIndex)
                 # self.normalTrain(client_index, modelIndex)
-            self.adjustBudget()
+
             self.Agg()
 
             self.net_glob = Complete_ResNet18(self.net_glob_client, self.net_glob_server)
@@ -87,7 +89,7 @@ class GitSFL(Training):
         local = LocalUpdate_GitSFL(args=self.args, dataset=self.dataset_train, idxs=self.dict_users[curClient],
                                    helpers_idx=sampledData)
         mean_grad_norm = local.union_train(self.modelClient[modelIdx], self.modelServer[modelIdx])
-        self.grad_norm[modelIdx] = mean_grad_norm
+        self.grad_norm[modelIdx].append(mean_grad_norm)
 
     def normalTrain(self, curClient: int, modelIdx: int):
         sampledData = self.dict_users[curClient]
@@ -140,7 +142,7 @@ class GitSFL(Training):
         return sampledData
 
     def selectHelpers(self, curClient: int, modelIdx: int):
-        overall_requirement = max(10, int(len(self.dict_users[curClient]) * COMM_BUDGET))
+        overall_requirement = max(10, int(len(self.dict_users[curClient]) * self.budget_list[modelIdx]))
         cumulative_label_distribution = self.cumulative_label_distributions[modelIdx]
         prior_of_classes = [max(np.mean(cumulative_label_distribution) - label, 0)
                             for label in cumulative_label_distribution]
@@ -204,16 +206,33 @@ class GitSFL(Training):
         # print("overall_supplement:\t", sum(provide_data))
         return helpers, provide_data
 
-    def detectCLP(self) -> bool:
-        self.fed_grad_norm.append(np.mean(self.grad_norm))
-        OldNorm = max([np.mean(self.fed_grad_norm[-self.win - 1:-1]), 0.0000001])
-        NewNorm = np.mean(self.fed_grad_norm[-self.win:])
+    def detectCLP(self, modelIdx) -> bool:
+        OldNorm = max([np.mean(self.grad_norm[modelIdx][-self.win - 1:-1]), 0.0000001])
+        NewNorm = np.mean(self.grad_norm[modelIdx][-self.win:])
         delta = (NewNorm - OldNorm) / OldNorm
-        # self.weakAggWeight[modelIdx] = 1 - delta
-        # wandb.log({"round": self.round, "FGN": NewNorm, "delta": delta})
         return delta > DELTA
+        # self.fed_grad_norm.append(np.mean(self.grad_norm))
+        # OldNorm = max([np.mean(self.fed_grad_norm[-self.win - 1:-1]), 0.0000001])
+        # NewNorm = np.mean(self.fed_grad_norm[-self.win:])
+        # delta = (NewNorm - OldNorm) / OldNorm
 
-    def adjustBudget(self):
+        # self.weakAggWeight[modelIdx] = 1 - delta
+
+        # wandb.log({"round": self.round, "FGN": NewNorm, "delta": delta})
+        # return delta > DELTA
+
+    def adjustBudget(self, modelIdx):
+        CLP = self.detectCLP(modelIdx)
+        if CLP:
+            if self.budget_list[modelIdx] >= BUDGET_THRESHOLD:
+                self.budget_list[modelIdx] += 0.01
+            else:
+                # COMM_BUDGET = min(BUDGET_THRESHOLD, COMM_BUDGET * 2)
+                self.budget_list[modelIdx] = self.budget_list[modelIdx] * 2
+
+        else:
+            self.budget_list[modelIdx] = max(0.01, self.budget_list[modelIdx]/2)
+
         # global COMM_BUDGET
         # CLP = self.detectCLP()
         # if CLP:
@@ -247,10 +266,10 @@ class GitSFL(Training):
         return organized
 
     def log(self):
-        logger.info("Round{}, acc:{:.2f}, max_avg:{:.2f}, max_std:{:.2f}, loss:{:.2f}, comm:{:.2f}, budget:{:.2f}",
+        logger.info("Round{}, acc:{:.2f}, max_avg:{:.2f}, max_std:{:.2f}, loss:{:.2f}, comm:{:.2f}",
                     self.round, self.acc, self.max_avg, self.max_std,
-                    self.loss, (self.helper_overhead / self.client_overhead), COMM_BUDGET)
+                    self.loss, (self.helper_overhead / self.client_overhead))
         if self.args.wandb:
             wandb.log({"round": self.round, 'acc': self.acc, 'max_avg': self.max_avg,
                        "max_std": self.max_std, "loss": self.loss,
-                       "comm": (self.helper_overhead / self.client_overhead), "budget": COMM_BUDGET})
+                       "comm": (self.helper_overhead / self.client_overhead)})
