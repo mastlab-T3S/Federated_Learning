@@ -12,7 +12,7 @@ from models import Aggregation, LocalUpdate_FedAvg, LocalUpdate_GitSFL
 from models.SplitModel import Complete_ResNet18
 from utils.utils import getTrueLabels
 
-COMM_BUDGET = 0.01
+COMM_BUDGET = 0.15
 BUDGET_THRESHOLD = 0.2
 DECAY = 0.5
 DELTA = 0
@@ -67,7 +67,7 @@ class GitSFL(Training):
                 # self.normalTrain(client_index, modelIndex)
 
             self.Agg()
-            self.adjustBudget()
+            # self.adjustBudget()
             self.net_glob = Complete_ResNet18(self.net_glob_client, self.net_glob_server)
             self.test()
             self.log()
@@ -234,22 +234,22 @@ class GitSFL(Training):
         # else:
         #     self.budget_list[modelIdx] = max(0.01, self.budget_list[modelIdx] / 2)
 
-        # global COMM_BUDGET
-        # CLP = self.detectCLP()
-        # if CLP:
-        #     if COMM_BUDGET >= BUDGET_THRESHOLD:
-        #         COMM_BUDGET += 0.01
-        #     else:
-        #         # COMM_BUDGET = min(BUDGET_THRESHOLD, COMM_BUDGET * 2)
-        #         COMM_BUDGET = COMM_BUDGET * 2
-        #
-        # else:
-        #     COMM_BUDGET = max(0.01, COMM_BUDGET/2)
-
         global COMM_BUDGET
         CLP, delta = self.detectCLP()
-        if self.round != 0:
-            COMM_BUDGET = min(max(0.01, COMM_BUDGET * (1 + delta)), BUDGET_THRESHOLD)
+        if CLP:
+            if COMM_BUDGET >= BUDGET_THRESHOLD:
+                COMM_BUDGET += 0.01
+            else:
+                COMM_BUDGET = min(BUDGET_THRESHOLD, COMM_BUDGET * 2)
+                # COMM_BUDGET = COMM_BUDGET * 2
+
+        else:
+            COMM_BUDGET = max(0.05, COMM_BUDGET/2)
+
+        # global COMM_BUDGET
+        # CLP, delta = self.detectCLP()
+        # if self.round != 0:
+        #     COMM_BUDGET = min(max(0.01, COMM_BUDGET * (1 + delta)), BUDGET_THRESHOLD)
             # if CLP:
             #     if COMM_BUDGET >= BUDGET_THRESHOLD:
             #         COMM_BUDGET += 0.01
