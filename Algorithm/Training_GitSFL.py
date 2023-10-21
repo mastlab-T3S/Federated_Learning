@@ -17,6 +17,7 @@ BUDGET_THRESHOLD = 0.2
 DECAY = 0.5
 DELTA = 0
 WIN = 10
+DATASET_SIZE = 50000
 
 
 @logger.catch
@@ -43,6 +44,8 @@ class GitSFL(Training):
         self.win = WIN
         self.helper_overhead = 0
         self.client_overhead = 0
+
+        self.classify_count = [[[] for _ in range(DATASET_SIZE)] for _ in range(self.repoSize)]
 
         self.net_glob_client = net_glob_client
         self.net_glob_server = net_glob_server
@@ -84,11 +87,12 @@ class GitSFL(Training):
         sampledData = None
         if self.args.MR != 0:
             helpers, provide_data = self.selectHelpers(curClient, modelIdx)
-            sampledData = self.sampleData(helpers, provide_data)
+            sampledData = self.sampleData(helpers, provide_data, modelIdx)
 
         local = LocalUpdate_GitSFL(args=self.args, dataset=self.dataset_train, idxs=self.dict_users[curClient],
                                    helpers_idx=sampledData)
-        mean_grad_norm = local.union_train(self.modelClient[modelIdx], self.modelServer[modelIdx])
+        mean_grad_norm = local.union_train(self.modelClient[modelIdx], self.modelServer[modelIdx],
+                                           self.classify_count[modelIdx])
         self.grad_norm[modelIdx] = mean_grad_norm
 
     def normalTrain(self, curClient: int, modelIdx: int):
@@ -133,12 +137,24 @@ class GitSFL(Training):
         # w_avg = Aggregation(w, lens)
         # self.repo[modelIdx].load_state_dict(w_avg)
 
-    def sampleData(self, helpers: List[int], provideData: List[List[int]]) -> List[int]:
+    def sampleData(self, helpers: List[int], provideData: List[List[int]], modexIdx: int) -> List[int]:
         # randomSample
+        # sampledData = []
+        # for i, helper in enumerate(helpers):
+        #     for classIdx, num in enumerate(provideData[i]):
+        #         sampledData.extend(random.sample(self.dataByLabel[helper][classIdx], num))
+        # return sampledData
         sampledData = []
         for i, helper in enumerate(helpers):
             for classIdx, num in enumerate(provideData[i]):
-                sampledData.extend(random.sample(self.dataByLabel[helper][classIdx], num))
+                lst = [(dataIdx, np.mean(self.classify_count[modexIdx][dataIdx])) for dataIdx in
+                       self.dataByLabel[helper][classIdx]]
+                lst.sort(key=lambda x: x[-1])
+                lst = [i[0] for i in lst]
+                sample = []
+                for n in range(num):
+                    sample.append(lst[n * int((len(self.dataByLabel[helper][classIdx]) / num))])
+                sampledData.extend(random.sample(lst, num))
         return sampledData
 
     def selectHelpers(self, curClient: int, modelIdx: int):
@@ -244,21 +260,21 @@ class GitSFL(Training):
                 # COMM_BUDGET = COMM_BUDGET * 2
 
         else:
-            COMM_BUDGET = max(0.05, COMM_BUDGET/2)
+            COMM_BUDGET = max(0.05, COMM_BUDGET / 2)
 
         # global COMM_BUDGET
         # CLP, delta = self.detectCLP()
         # if self.round != 0:
         #     COMM_BUDGET = min(max(0.01, COMM_BUDGET * (1 + delta)), BUDGET_THRESHOLD)
-            # if CLP:
-            #     if COMM_BUDGET >= BUDGET_THRESHOLD:
-            #         COMM_BUDGET += 0.01
-            #     else:
-            #         COMM_BUDGET = min(BUDGET_THRESHOLD, COMM_BUDGET * (1 + delta))
-            #         # COMM_BUDGET = COMM_BUDGET * 2
-            #
-            # else:
-            #     COMM_BUDGET = max(0.01, COMM_BUDGET * (1 + delta))
+        # if CLP:
+        #     if COMM_BUDGET >= BUDGET_THRESHOLD:
+        #         COMM_BUDGET += 0.01
+        #     else:
+        #         COMM_BUDGET = min(BUDGET_THRESHOLD, COMM_BUDGET * (1 + delta))
+        #         # COMM_BUDGET = COMM_BUDGET * 2
+        #
+        # else:
+        #     COMM_BUDGET = max(0.01, COMM_BUDGET * (1 + delta))
         pass
 
     def organizeDataByLabel(self) -> list[list[list[int]]]:

@@ -27,6 +27,19 @@ class DatasetSplit(Dataset):
         return image, label
 
 
+class DatasetSplit_GitSFL(Dataset):
+    def __init__(self, dataset, idxs):
+        self.dataset = dataset
+        self.idxs = list(idxs)
+
+    def __len__(self):
+        return len(self.idxs)
+
+    def __getitem__(self, item):
+        image, label = self.dataset[self.idxs[item]]
+        return image, label, self.idxs[item]
+
+
 class LocalUpdate_FedAvg(object):
     def __init__(self, args, dataset=None, idxs=None, verbose=False):
         self.args = args
@@ -463,16 +476,16 @@ class LocalUpdate_GitSFL:
     # 初始化组，参数依次为组内的客户端ID列表，学习率，设备（GPU)，完整的训练集，组内客户端数据索引，batch个数，分组策略
     def __init__(self, args, dataset=None, idxs=None, helpers_idx=None):
         self.args = args
-        self.ldr_train = DataLoader(DatasetSplit(dataset, idxs), batch_size=self.args.local_bs, shuffle=True)
+        self.ldr_train = DataLoader(DatasetSplit_GitSFL(dataset, idxs), batch_size=self.args.local_bs, shuffle=True)
         self.ldr_train_helper = []
         if helpers_idx is not None:
-            self.ldr_train_helper = DataLoader(DatasetSplit(dataset, helpers_idx),
+            self.ldr_train_helper = DataLoader(DatasetSplit_GitSFL(dataset, helpers_idx),
                                                batch_size=max(math.ceil(len(helpers_idx) / len(self.ldr_train)), 2),
                                                shuffle=True,
                                                drop_last=True)
         self.loss_func = nn.CrossEntropyLoss()
 
-    def union_train(self, net_client, net_server):
+    def union_train(self, net_client, net_server, classify_count):
         net_client.train()
         net_server.train()
         # train and update
@@ -484,23 +497,25 @@ class LocalUpdate_GitSFL:
         for iter in range(self.args.local_ep):
             grad_norm = 0
             # 由于每个客户端的batch_len一致，遍历每一个batch
-            for batch_idx, (images, labels) in enumerate(self.ldr_train):
+            for batch_idx, (images, labels, idxes_client) in enumerate(self.ldr_train):
                 # 保存所有数据计算出中间特征
                 all_fx = []
                 # 保存所有数据的label
                 all_labels = torch.tensor([]).to(self.args.device)
+                all_indexes = []
 
                 # 计算client的特征
                 images, labels = images.to(self.args.device), labels.to(self.args.device)
                 fx_client = net_client(images)
                 all_fx.append(fx_client)
                 all_labels = torch.cat([all_labels, labels], axis=0)
+                all_indexes.extend(idxes_client)
 
                 # 计算helper的特征
-                images_helper, labels_helper, fx_helper = None, None, None
+                images_helper, labels_helper, idxes_server, fx_helper = None, None, None, None
                 if batch_idx < len(self.ldr_train_helper):
-                    for count, (i, l) in enumerate(self.ldr_train_helper):
-                        images_helper, labels_helper = i, l
+                    for count, (i, l, k) in enumerate(self.ldr_train_helper):
+                        images_helper, labels_helper, idxes_server = i, l, k
                         if count == batch_idx:
                             break
                     images_helper, labels_helper = images_helper.to(self.args.device), labels_helper.to(
@@ -510,6 +525,7 @@ class LocalUpdate_GitSFL:
                     fx_helper = temp_net(images_helper)
                     all_fx.append(fx_helper)
                     all_labels = torch.cat([all_labels, labels_helper], axis=0)
+                    all_indexes.extend(idxes_server)
 
                 net_client.zero_grad()
 
@@ -540,5 +556,14 @@ class LocalUpdate_GitSFL:
                     gnorm = parms.grad.detach().data.norm(2)
                     temp_norm = temp_norm + (gnorm.item()) ** 2
                 grad_norm = grad_norm + temp_norm
+
+                for i, softLabel in enumerate(fx_server):
+                    softLabel = softLabel.tolist()
+                    predict_class = softLabel.index(max(softLabel))
+                    if predict_class == all_labels[i].item():
+                        classify_count[all_indexes[i]].append(1)
+                    else:
+                        classify_count[all_indexes[i]].append(0)
+
             GNorm.append(grad_norm)
         return np.mean(GNorm) * self.args.lr
