@@ -486,6 +486,7 @@ class LocalUpdate_GitSFL:
         self.loss_func = nn.CrossEntropyLoss()
 
     def union_train(self, net_client, net_server, classify_count):
+        helper_net = copy.deepcopy(net_client)
         net_client.train()
         net_server.train()
         # train and update
@@ -521,7 +522,7 @@ class LocalUpdate_GitSFL:
                     images_helper, labels_helper = images_helper.to(self.args.device), labels_helper.to(
                         self.args.device)
                 if images_helper is not None:
-                    temp_net = copy.deepcopy(net_client)
+                    temp_net = copy.deepcopy(helper_net)
                     fx_helper = temp_net(images_helper)
                     all_fx.append(fx_helper)
                     all_labels = torch.cat([all_labels, labels_helper], axis=0)
@@ -564,6 +565,8 @@ class LocalUpdate_GitSFL:
                         classify_count[all_indexes[i]].append(1)
                     else:
                         classify_count[all_indexes[i]].append(0)
+                    if len(classify_count[all_indexes[i]]) > 20:
+                        classify_count[all_indexes[i]].pop(0)
 
             GNorm.append(grad_norm)
         return np.mean(GNorm) * self.args.lr

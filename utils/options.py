@@ -83,6 +83,9 @@ def args_parser():
     parser.add_argument('--KD_lr', default=0.01, type=float)
 
     parser.add_argument('--MR', default=0, type=int)
+    parser.add_argument('--DB', default=0, type=int)
+    parser.add_argument('--BS', default=0, type=int)
+
 
     args = parser.parse_args()
     return args
