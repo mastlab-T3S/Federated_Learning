@@ -480,13 +480,12 @@ class LocalUpdate_GitSFL:
         self.ldr_train_helper = []
         if helpers_idx is not None:
             self.ldr_train_helper = DataLoader(DatasetSplit_GitSFL(dataset, helpers_idx),
-                                               batch_size=max(math.ceil(len(helpers_idx) / len(self.ldr_train)), 2),
-                                               shuffle=True,
-                                               drop_last=True)
+                                               batch_size=max(math.ceil(len(helpers_idx) / len(self.ldr_train))),
+                                               shuffle=True)
         self.loss_func = nn.CrossEntropyLoss()
 
     def union_train(self, net_client, net_server, classify_count):
-        helper_net = copy.deepcopy(net_client)
+        # helper_net = copy.deepcopy(net_client)
         net_client.train()
         net_server.train()
         # train and update
@@ -522,7 +521,7 @@ class LocalUpdate_GitSFL:
                     images_helper, labels_helper = images_helper.to(self.args.device), labels_helper.to(
                         self.args.device)
                 if images_helper is not None:
-                    temp_net = copy.deepcopy(helper_net)
+                    temp_net = copy.deepcopy(net_client)
                     fx_helper = temp_net(images_helper)
                     all_fx.append(fx_helper)
                     all_labels = torch.cat([all_labels, labels_helper], axis=0)

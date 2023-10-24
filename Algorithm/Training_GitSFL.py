@@ -157,7 +157,7 @@ class GitSFL(Training):
                        self.dataByLabel[helper][classIdx]]
                 lst.sort(key=lambda x: x[-1])
                 img = [i[0] for i in lst]
-                w = [i[1]+1e-10 for i in lst]
+                w = [i[1] + 1e-10 for i in lst]
                 w.reverse()
                 sampledData.extend(random.choices(img, w, k=num))
         return sampledData
@@ -170,22 +170,49 @@ class GitSFL(Training):
         requirement_classes = [int(overall_requirement * (prior / sum(prior_of_classes))) for prior in prior_of_classes]
         required = requirement_classes[::]
 
-        helpers = []
+        # helpers = []
+        # provide_data = []
+        # candidate = list(range(self.args.num_users))
+        # candidate.pop(curClient)
+        # random.shuffle(candidate)
+        # for client in candidate:
+        #     if sum(requirement_classes) == 0:
+        #         break
+        #     temp = []
+        #     for classIdx, label in enumerate(self.true_labels[client]):
+        #         temp.append(min(label, requirement_classes[classIdx]))
+        #         requirement_classes[classIdx] -= min(label, requirement_classes[classIdx])
+        #     if sum(temp) > 0:
+        #         self.help_count[client] += 1
+        #         helpers.append(client)
+        #         provide_data.append(temp)
+
+        helpers = 200
         provide_data = []
+        max_contribution = 0
         candidate = list(range(self.args.num_users))
         candidate.pop(curClient)
         random.shuffle(candidate)
+        weight = []
+        data = []
         for client in candidate:
-            if sum(requirement_classes) == 0:
-                break
+            contribution = 0
             temp = []
             for classIdx, label in enumerate(self.true_labels[client]):
+                contribution += min(label, requirement_classes[classIdx])
                 temp.append(min(label, requirement_classes[classIdx]))
-                requirement_classes[classIdx] -= min(label, requirement_classes[classIdx])
-            if sum(temp) > 0:
-                self.help_count[client] += 1
-                helpers.append(client)
-                provide_data.append(temp)
+
+            weight.append(contribution ** 2)
+            data.append(temp)
+
+            # if contribution > max_contribution:
+            #     max_contribution = contribution
+            #     helpers = client
+            #     provide_data = temp
+
+        helpers = random.choices(candidate, weights=weight)[0]
+        provide_data = data[candidate.index(helpers)]
+        self.help_count[helpers] += 1
 
         self.helper_overhead += overall_requirement
         self.client_overhead += len(self.dict_users[curClient])
