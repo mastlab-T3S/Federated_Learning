@@ -25,29 +25,6 @@ def _make_layer(block, inplanes, planes, stride=1):
     return nn.Sequential(*layers)
 
 
-class ResBlk(nn.Module):
-    def __init__(self, ch_in, ch_out, stride):
-        super(ResBlk, self).__init__()
-        self.conv1 = nn.Conv2d(ch_in, ch_out, kernel_size=3, stride=stride, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(ch_out)
-        self.conv2 = nn.Conv2d(ch_out, ch_out, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(ch_out)
-
-        self.extra = nn.Sequential(
-            nn.Conv2d(ch_in, ch_out, kernel_size=1, stride=stride, bias=False),
-            nn.BatchNorm2d(ch_out)
-        )
-
-    def forward(self, x):
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = F.relu(out, inplace=True)
-        out = self.bn2(self.conv2(out))
-        out = self.extra(x) + out
-        out = F.relu(out)
-        return out
-
-
 # Model at client side
 class ResNet18_client_side(nn.Module):
     def __init__(self):
@@ -67,6 +44,7 @@ class ResNet18_client_side(nn.Module):
             elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
+
     def forward(self, x):
         x = self.layer1(x)
         x = self.relu(x)

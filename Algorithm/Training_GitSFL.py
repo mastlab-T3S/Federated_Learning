@@ -12,12 +12,14 @@ from models import Aggregation, LocalUpdate_FedAvg, LocalUpdate_GitSFL
 from models.SplitModel import Complete_ResNet18
 from utils.utils import getTrueLabels
 
-COMM_BUDGET = 0.104
+COMM_BUDGET = 0.1
 BUDGET_THRESHOLD = 0.2
 DECAY = 0.5
 DELTA = 0
 WIN = 10
 DATASET_SIZE = 50000
+MODEL_SIZE = 614170
+FEATURE_SIZE = int(13_107_622 / 50)
 
 
 @logger.catch
@@ -27,6 +29,7 @@ class GitSFL(Training):
 
         # GitSFL Setting
         # self.net_glob = Complete_ResNet18(net_glob_client, net_glob_server)
+        self.traffic = 0
         self.comm_budget = COMM_BUDGET
         self.repoSize = int(args.num_users * args.frac)
         self.budget_list = [COMM_BUDGET for _ in range(self.repoSize)]
@@ -94,6 +97,8 @@ class GitSFL(Training):
                                    helpers_idx=sampledData)
         mean_grad_norm = local.union_train(self.modelClient[modelIdx], self.modelServer[modelIdx],
                                            self.classify_count[modelIdx])
+        self.traffic += MODEL_SIZE
+        self.traffic += (len(self.dict_users[curClient]) * FEATURE_SIZE * self.args.local_bs * 2)
         self.grad_norm[modelIdx] = mean_grad_norm
 
     def normalTrain(self, curClient: int, modelIdx: int):
@@ -115,11 +120,6 @@ class GitSFL(Training):
         w_avg_server = Aggregation(w_server, [1 for _ in range(self.repoSize)])
         self.net_glob_server.load_state_dict(w_avg_server)
 
-        #############################################
-        # w = [copy.deepcopy(model.state_dict()) for model in self.repo]
-        # w_avg = Aggregation(w, [1 for _ in range(self.repoSize)])
-        # self.net_glob.load_state_dict(w_avg)
-
     def weakAgg(self, modelIdx: int):
         cur_model_client = self.modelClient[modelIdx]
         w = [copy.deepcopy(self.net_glob_client.state_dict()), copy.deepcopy(cur_model_client.state_dict())]
@@ -131,12 +131,6 @@ class GitSFL(Training):
         w = [copy.deepcopy(self.net_glob_server.state_dict()), copy.deepcopy(cur_model_server.state_dict())]
         w_avg_server = Aggregation(w, lens)
         cur_model_server.load_state_dict(w_avg_server)
-
-        ###########################################################
-        # lens = [10, 1]
-        # w = [copy.deepcopy(self.repo[modelIdx].state_dict()), copy.deepcopy(self.net_glob.state_dict())]
-        # w_avg = Aggregation(w, lens)
-        # self.repo[modelIdx].load_state_dict(w_avg)
 
     def sampleData(self, helpers: List[int], provideData: List[List[int]], modexIdx: int) -> List[int]:
         # randomSample
@@ -163,57 +157,61 @@ class GitSFL(Training):
         return sampledData
 
     def selectHelpers(self, curClient: int, modelIdx: int):
-        overall_requirement = max(10, int(len(self.dict_users[curClient]) * COMM_BUDGET))
+        overall_requirement = int(len(self.dict_users[curClient]) * COMM_BUDGET)
+        if overall_requirement < 10:
+            overall_requirement = 0
         cumulative_label_distribution = self.cumulative_label_distributions[modelIdx]
         prior_of_classes = [max(np.mean(cumulative_label_distribution) - label, 0)
                             for label in cumulative_label_distribution]
         requirement_classes = [int(overall_requirement * (prior / sum(prior_of_classes))) for prior in prior_of_classes]
         required = requirement_classes[::]
 
-        # helpers = []
-        # provide_data = []
-        # candidate = list(range(self.args.num_users))
-        # candidate.pop(curClient)
-        # random.shuffle(candidate)
-        # for client in candidate:
-        #     if sum(requirement_classes) == 0:
-        #         break
-        #     temp = []
-        #     for classIdx, label in enumerate(self.true_labels[client]):
-        #         temp.append(min(label, requirement_classes[classIdx]))
-        #         requirement_classes[classIdx] -= min(label, requirement_classes[classIdx])
-        #     if sum(temp) > 0:
-        #         self.help_count[client] += 1
-        #         helpers.append(client)
-        #         provide_data.append(temp)
-
-        helpers = 200
+        helpers = []
         provide_data = []
-        max_contribution = 0
         candidate = list(range(self.args.num_users))
         candidate.pop(curClient)
         random.shuffle(candidate)
-        weight = []
-        data = []
         for client in candidate:
-            contribution = 0
+            if sum(requirement_classes) == 0:
+                break
             temp = []
             for classIdx, label in enumerate(self.true_labels[client]):
-                contribution += min(label, requirement_classes[classIdx])
                 temp.append(min(label, requirement_classes[classIdx]))
+                requirement_classes[classIdx] -= min(label, requirement_classes[classIdx])
+            if sum(temp) > 0:
+                self.help_count[client] += 1
+                helpers.append(client)
+                provide_data.append(temp)
 
-            weight.append(contribution ** 2)
-            data.append(temp)
+        # helpers = 200
+        # provide_data = []
+        # max_contribution = 0
+        # candidate = list(range(self.args.num_users))
+        # candidate.pop(curClient)
+        # random.shuffle(candidate)
+        # weight = []
+        # data = []
+        # for client in candidate:
+        #     contribution = 0
+        #     temp = []
+        #     for classIdx, label in enumerate(self.true_labels[client]):
+        #         contribution += min(label, requirement_classes[classIdx])
+        #         temp.append(min(label, requirement_classes[classIdx]))
+        #
+        #     weight.append(contribution ** 2)
+        #     data.append(temp)
+        #
+        #     # if contribution > max_contribution:
+        #     #     max_contribution = contribution
+        #     #     helpers = client
+        #     #     provide_data = temp
+        #
+        # helpers = random.choices(candidate, weights=weight)[0]
+        # provide_data = data[candidate.index(helpers)]
+        # self.help_count[helpers] += 1
 
-            # if contribution > max_contribution:
-            #     max_contribution = contribution
-            #     helpers = client
-            #     provide_data = temp
-
-        helpers = random.choices(candidate, weights=weight)[0]
-        provide_data = data[candidate.index(helpers)]
-        self.help_count[helpers] += 1
-
+        self.traffic += len(helpers) * MODEL_SIZE
+        self.traffic += (overall_requirement * FEATURE_SIZE * self.args.local_bs * 2)
         self.helper_overhead += overall_requirement
         self.client_overhead += len(self.dict_users[curClient])
 
@@ -256,23 +254,23 @@ class GitSFL(Training):
         # else:
         #     self.budget_list[modelIdx] = max(0.01, self.budget_list[modelIdx] / 2)
 
-        # global COMM_BUDGET
-        # CLP, delta = self.detectCLP()
-        # if CLP:
-        #     if COMM_BUDGET >= BUDGET_THRESHOLD:
-        #         COMM_BUDGET += 0.01
-        #     else:
-        #         COMM_BUDGET = min(BUDGET_THRESHOLD, COMM_BUDGET * 2)
-        #         # COMM_BUDGET = COMM_BUDGET * 2
-        #
-        # else:
-        #     COMM_BUDGET = max(0.05, COMM_BUDGET / 2)
-
         global COMM_BUDGET
         CLP, delta = self.detectCLP()
+        if CLP:
+            if COMM_BUDGET >= BUDGET_THRESHOLD:
+                COMM_BUDGET += 0.01
+            else:
+                COMM_BUDGET = min(BUDGET_THRESHOLD, COMM_BUDGET * 2)
+                # COMM_BUDGET = COMM_BUDGET * 2
 
-        if self.round != 0:
-            COMM_BUDGET = min(max(0.01, COMM_BUDGET * (1 + delta)), BUDGET_THRESHOLD)
+        else:
+            COMM_BUDGET = max(0.01, COMM_BUDGET / 2)
+
+        # global COMM_BUDGET
+        # CLP, delta = self.detectCLP()
+        #
+        # if self.round != 0:
+        #     COMM_BUDGET = min(max(0.01, COMM_BUDGET * (1 + delta)), BUDGET_THRESHOLD)
 
         # if self.round == 0:
         #     COMM_BUDGET += 0.01
@@ -299,10 +297,10 @@ class GitSFL(Training):
         return organized
 
     def log(self):
-        logger.info("Round{}, acc:{:.2f}, max_avg:{:.2f}, max_std:{:.2f}, loss:{:.2f}, comm:{:.2f}, budget:{:.2f}",
+        logger.info("Round{}, acc:{:.2f}, max_avg:{:.2f}, max_std:{:.2f}, loss:{:.2f}, comm:{:.2f}MB, budget:{:.2f}",
                     self.round, self.acc, self.max_avg, self.max_std,
-                    self.loss, (self.helper_overhead / self.client_overhead), COMM_BUDGET)
+                    self.loss, (self.traffic/1024/1024), COMM_BUDGET)
         if self.args.wandb:
             wandb.log({"round": self.round, 'acc': self.acc, 'max_avg': self.max_avg,
                        "max_std": self.max_std, "loss": self.loss,
-                       "comm": (self.helper_overhead / self.client_overhead), "budget": COMM_BUDGET})
+                       "comm": (self.traffic/1024/1024), "budget": COMM_BUDGET})
