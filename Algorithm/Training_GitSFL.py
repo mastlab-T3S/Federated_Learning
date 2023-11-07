@@ -57,7 +57,7 @@ class GitSFL(Training):
 
     @logger.catch()
     def train(self):
-        while self.round < self.args.epochs:
+        while (self.traffic / 1024 / 1024) < self.args.comm_limit:
             print("%" * 50)
             selected_users = np.random.choice(range(self.args.num_users), self.repoSize, replace=False)
             for modelIndex, client_index in enumerate(selected_users):
@@ -70,11 +70,11 @@ class GitSFL(Training):
 
                 self.splitTrain(client_index, modelIndex)
 
-                # self.normalTrain(client_index, modelIndex)
-
             self.Agg()
+
             if self.args.DB:
                 self.adjustBudget()
+
             self.net_glob = Complete_ResNet18(self.net_glob_client, self.net_glob_server)
             self.test()
             self.log()

@@ -22,6 +22,7 @@ def args_parser():
     parser.add_argument('--split', type=str, default='user', help="train-test split type, user or sample")
     parser.add_argument("--algorithm", type=str, default="GitSFL")
     parser.add_argument("--limit_time", type=int, default=30000)
+    parser.add_argument("--comm_limit", type=int, default=1.5e8)
 
     parser.add_argument("--data_augmentation", type=int, default=0)
     parser.add_argument("--cifar100_coarse", type=int, default=1)
