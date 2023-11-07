@@ -7,11 +7,10 @@ import pickle
 import math
 
 import torch
-from torch import nn, autograd
+from torch import nn
 from torch.utils.data import DataLoader, Dataset
 import torch.nn.functional as F
 import numpy as np
-import random
 from optimizer.Adabelief import AdaBelief
 
 
@@ -486,7 +485,6 @@ class LocalUpdate_GitSFL:
         self.loss_func = nn.CrossEntropyLoss()
 
     def union_train(self, net_client, net_server, classify_count):
-        helper_net = copy.deepcopy(net_client)
         net_client.train()
         net_server.train()
         # train and update
@@ -497,6 +495,7 @@ class LocalUpdate_GitSFL:
         GNorm = []
         for iter in range(self.args.local_ep):
             grad_norm = 0
+            helper_net = copy.deepcopy(net_client)
             # 由于每个客户端的batch_len一致，遍历每一个batch
             for batch_idx, (images, labels, idxes_client) in enumerate(self.ldr_train):
                 # 保存所有数据计算出中间特征
@@ -508,7 +507,6 @@ class LocalUpdate_GitSFL:
                 # 计算client的特征
                 images, labels = images.to(self.args.device), labels.to(self.args.device)
                 fx_client = net_client(images)
-                print(fx_client.shape)
                 all_fx.append(fx_client)
                 all_labels = torch.cat([all_labels, labels], axis=0)
                 all_indexes.extend(idxes_client)

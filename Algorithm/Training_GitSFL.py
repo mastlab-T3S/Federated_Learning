@@ -12,7 +12,7 @@ from models import Aggregation, LocalUpdate_FedAvg, LocalUpdate_GitSFL
 from models.SplitModel import Complete_ResNet18
 from utils.utils import getTrueLabels
 
-COMM_BUDGET = 0.1
+COMM_BUDGET = 0.01
 BUDGET_THRESHOLD = 0.2
 DECAY = 0.5
 DELTA = 0
@@ -157,9 +157,7 @@ class GitSFL(Training):
         return sampledData
 
     def selectHelpers(self, curClient: int, modelIdx: int):
-        overall_requirement = int(len(self.dict_users[curClient]) * COMM_BUDGET)
-        if overall_requirement < 10:
-            overall_requirement = 0
+        overall_requirement = max(10, int(len(self.dict_users[curClient]) * COMM_BUDGET))
         cumulative_label_distribution = self.cumulative_label_distributions[modelIdx]
         prior_of_classes = [max(np.mean(cumulative_label_distribution) - label, 0)
                             for label in cumulative_label_distribution]
@@ -183,35 +181,9 @@ class GitSFL(Training):
                 helpers.append(client)
                 provide_data.append(temp)
 
-        # helpers = 200
-        # provide_data = []
-        # max_contribution = 0
-        # candidate = list(range(self.args.num_users))
-        # candidate.pop(curClient)
-        # random.shuffle(candidate)
-        # weight = []
-        # data = []
-        # for client in candidate:
-        #     contribution = 0
-        #     temp = []
-        #     for classIdx, label in enumerate(self.true_labels[client]):
-        #         contribution += min(label, requirement_classes[classIdx])
-        #         temp.append(min(label, requirement_classes[classIdx]))
-        #
-        #     weight.append(contribution ** 2)
-        #     data.append(temp)
-        #
-        #     # if contribution > max_contribution:
-        #     #     max_contribution = contribution
-        #     #     helpers = client
-        #     #     provide_data = temp
-        #
-        # helpers = random.choices(candidate, weights=weight)[0]
-        # provide_data = data[candidate.index(helpers)]
-        # self.help_count[helpers] += 1
 
-        self.traffic += len(helpers) * MODEL_SIZE
-        self.traffic += (overall_requirement * FEATURE_SIZE * self.args.local_bs * 2)
+        self.traffic += len(helpers) * MODEL_SIZE * self.args.local_ep
+        self.traffic += (overall_requirement * FEATURE_SIZE * self.args.local_bs)
         self.helper_overhead += overall_requirement
         self.client_overhead += len(self.dict_users[curClient])
 
@@ -222,15 +194,9 @@ class GitSFL(Training):
         print("prior_of_classes:\t", list(map(int, prior_of_classes)))
         print("required_classes:\t", required)
         print("total_provide_data:\t", provide_data)
-        # print("selected_helper:\t", list(self.true_labels[helpers]))
-        # print("overall_supplement:\t", sum(provide_data))
         return helpers, provide_data
 
     def detectCLP(self):
-        # OldNorm = max([np.mean(self.grad_norm[modelIdx][-self.win - 1:-1]), 0.0000001])
-        # NewNorm = np.mean(self.grad_norm[modelIdx][-self.win:])
-        # delta = (NewNorm - OldNorm) / OldNorm
-        # return delta > DELTA, delta
         self.fed_grad_norm.append(np.mean(self.grad_norm))
         OldNorm = max([np.mean(self.fed_grad_norm[-self.win - 1:-1]), 0.0000001])
         NewNorm = np.mean(self.fed_grad_norm[-self.win:])
@@ -239,21 +205,7 @@ class GitSFL(Training):
 
         # self.weakAggWeight[modelIdx] = 1 - delta
 
-        # wandb.log({"round": self.round, "FGN": NewNorm, "delta": delta})
-        # return delta > DELTA
-
     def adjustBudget(self):
-        # CLP = self.detectCLP(modelIdx)
-        # if CLP:
-        #     if self.budget_list[modelIdx] >= BUDGET_THRESHOLD:
-        #         self.budget_list[modelIdx] += 0.01
-        #     else:
-        #         # self.budget_list[modelIdx] = min(BUDGET_THRESHOLD, self.budget_list[modelIdx] * 2)
-        #         self.budget_list[modelIdx] = self.budget_list[modelIdx] * 2
-        #
-        # else:
-        #     self.budget_list[modelIdx] = max(0.01, self.budget_list[modelIdx] / 2)
-
         global COMM_BUDGET
         CLP, delta = self.detectCLP()
         if CLP:
@@ -265,26 +217,6 @@ class GitSFL(Training):
 
         else:
             COMM_BUDGET = max(0.01, COMM_BUDGET / 2)
-
-        # global COMM_BUDGET
-        # CLP, delta = self.detectCLP()
-        #
-        # if self.round != 0:
-        #     COMM_BUDGET = min(max(0.01, COMM_BUDGET * (1 + delta)), BUDGET_THRESHOLD)
-
-        # if self.round == 0:
-        #     COMM_BUDGET += 0.01
-        # if CLP:
-        #     if COMM_BUDGET >= BUDGET_THRESHOLD:
-        #         COMM_BUDGET += 0.01
-        #     else:
-        #         # COMM_BUDGET = min(BUDGET_THRESHOLD, COMM_BUDGET * (1 + delta))
-        #         COMM_BUDGET = COMM_BUDGET * (1 + delta)
-        #         # COMM_BUDGET = COMM_BUDGET * 2
-        #
-        # else:
-        #     COMM_BUDGET = max(0.01, COMM_BUDGET * (1 + delta))
-        # pass
 
     def organizeDataByLabel(self) -> list[list[list[int]]]:
         organized = []
