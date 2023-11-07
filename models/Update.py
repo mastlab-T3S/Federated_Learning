@@ -45,11 +45,7 @@ class LocalUpdate_FedAvg(object):
         self.args = args
         self.loss_func = nn.CrossEntropyLoss()
         self.selected_clients = []
-        # if len(idxs) % args.local_bs != 1:
         self.ldr_train = DataLoader(DatasetSplit(dataset, idxs), batch_size=self.args.local_bs, shuffle=True)
-        # else:
-        #     self.ldr_train = DataLoader(DatasetSplit(dataset, idxs), batch_size=self.args.local_bs, shuffle=True,
-        #                                 drop_last=True)
         self.verbose = verbose
 
     def train(self, round, net, requestType="W"):
@@ -568,3 +564,40 @@ class LocalUpdate_GitSFL:
 
             GNorm.append(grad_norm)
         return np.mean(GNorm) * self.args.lr
+
+class LocalUpdate_SFL:
+    def __init__(self, args, dataset=None, idxs=None):
+        self.args = args
+        self.loss_func = nn.CrossEntropyLoss()
+        self.selected_clients = []
+        self.ldr_train = DataLoader(DatasetSplit(dataset, idxs), batch_size=self.args.local_bs, shuffle=True)
+    def splitTrain(self, net_client, net_server):
+        net_client.train()
+        net_server.train()
+        # train and update
+        optimizer_client = torch.optim.SGD(net_client.parameters(), lr=self.args.lr, momentum=self.args.momentum,
+                                           weight_decay=self.args.weight_decay)
+        optimizer_server = torch.optim.SGD(net_server.parameters(), lr=self.args.lr, momentum=self.args.momentum,
+                                           weight_decay=self.args.weight_decay)
+        for epIdx in range(self.args.local_ep):
+            # 由于每个客户端的batch_len一致，遍历每一个batch
+            for batch_idx, (images, labels) in enumerate(self.ldr_train):
+                # 保存所有数据计算出中间特征
+                # 保存所有数据的label
+
+                # 计算client的特征
+                images, labels = images.to(self.args.device), labels.to(self.args.device)
+                all_fx = net_client(images)
+                net_client.zero_grad()
+                fx_to_server = all_fx.clone().detach().requires_grad_(True)
+                net_server.zero_grad()
+                fx_server = net_server(fx_to_server)
+                loss = self.loss_func(fx_server, labels)
+                loss.backward()
+                optimizer_server.step()
+
+                all_dfx = fx_to_server.grad.clone().detach()
+                all_fx.backward(all_dfx)
+                optimizer_client.step()
+        return net_client.state_dict(), net_server.state_dict()
+

@@ -5,6 +5,7 @@
 import matplotlib
 
 from Algorithm.Training_GitSFL import GitSFL
+from Algorithm.Training_SFL import SFL
 from models.SplitModel import ResNet18_client_side, ResNet18_server_side
 
 # from Algorithm.Demo import Demo
@@ -21,10 +22,11 @@ from Algorithm import *
 
 
 def FedAvg(net_glob, dataset_train, dataset_test, dict_users):
+    MODEL_SIZE = 44781080
     net_glob.train()
-
     # training
     acc = []
+    comm = 0
 
     for iter in range(args.epochs):
 
@@ -48,7 +50,9 @@ def FedAvg(net_glob, dataset_train, dataset_test, dict_users):
         # copy weight to net_glob
         net_glob.load_state_dict(w_glob)
 
-        acc.append(test(net_glob, dataset_test, args))
+        acc, loss = test(net_glob, dataset_test, args)
+
+
 
     save_result(acc, 'test_acc', args)
 
@@ -278,7 +282,7 @@ def test(net_glob, dataset_test, args):
 
     print("Testing accuracy: {:.2f}".format(acc_test))
 
-    return acc_test.item()
+    return acc_test.item(), loss_test
 
 
 if __name__ == '__main__':
@@ -339,5 +343,12 @@ if __name__ == '__main__':
         net_glob_server.to(args.device)
         gitsfl = GitSFL(args, net_glob, dataset_train, dataset_test, dict_users, net_glob_client, net_glob_server)
         gitsfl.train()
+    elif args.algorithm == "SFL":
+        net_glob_client = ResNet18_client_side()
+        net_glob_client.to(args.device)
+        net_glob_server = ResNet18_server_side()
+        net_glob_server.to(args.device)
+        sfl = SFL(args, net_glob, dataset_train, dataset_test, dict_users, net_glob_client, net_glob_server)
+        sfl.train()
     else:
         raise "%s algorithm has not achieved".format(args.algorithm)

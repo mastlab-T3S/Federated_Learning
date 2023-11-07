@@ -97,7 +97,7 @@ class GitSFL(Training):
                                    helpers_idx=sampledData)
         mean_grad_norm = local.union_train(self.modelClient[modelIdx], self.modelServer[modelIdx],
                                            self.classify_count[modelIdx])
-        self.traffic += MODEL_SIZE
+        self.traffic += MODEL_SIZE * 2
         self.traffic += (len(self.dict_users[curClient]) * FEATURE_SIZE * self.args.local_bs * 2)
         self.grad_norm[modelIdx] = mean_grad_norm
 
@@ -206,16 +206,24 @@ class GitSFL(Training):
 
     def adjustBudget(self):
         global COMM_BUDGET
-        CLP, delta = self.detectCLP()
-        if CLP:
-            if COMM_BUDGET >= BUDGET_THRESHOLD:
-                COMM_BUDGET += 0.01
-            else:
-                COMM_BUDGET = min(BUDGET_THRESHOLD, COMM_BUDGET * 2)
-                # COMM_BUDGET = COMM_BUDGET * 2
 
-        else:
-            COMM_BUDGET = max(0.01, COMM_BUDGET / 2)
+        # CLP, delta = self.detectCLP()
+        # if CLP:
+        #     if COMM_BUDGET >= BUDGET_THRESHOLD:
+        #         COMM_BUDGET += 0.01
+        #     else:
+        #         COMM_BUDGET = min(BUDGET_THRESHOLD, COMM_BUDGET * 2)
+        #         # COMM_BUDGET = COMM_BUDGET * 2
+        #
+        # else:
+        #     COMM_BUDGET = max(0.01, COMM_BUDGET / 2)
+
+    ############################################
+
+        CLP, delta = self.detectCLP()
+        if self.round != 0:
+            COMM_BUDGET = max(0.01, COMM_BUDGET * (1 + delta))
+
 
     def organizeDataByLabel(self) -> list[list[list[int]]]:
         organized = []
