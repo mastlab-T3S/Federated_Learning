@@ -1,4 +1,6 @@
 import numpy as np
+import wandb
+from loguru import logger
 
 from utils.utils import test, initWandb
 
@@ -21,6 +23,8 @@ class Training:
         self.max_avg = 0
         self.max_std = 0
 
+        self.traffic = 0
+
         if args.wandb:
             initWandb(args)
 
@@ -32,4 +36,14 @@ class Training:
         if avg > self.max_avg:
             self.max_avg = avg
             self.max_std = np.std(temp)
+
+    def log(self):
+        logger.info(
+            "Round{}, acc:{:.2f}, max_avg:{:.2f}, max_std:{:.2f}, loss:{:.2f}, comm:{:.2f}MB",
+            self.round, self.acc, self.max_avg, self.max_std,
+            self.loss, (self.traffic / 1024 / 1024))
+        if self.args.wandb:
+            wandb.log({"round": self.round, 'acc': self.acc, 'max_avg': self.max_avg,
+                       "max_std": self.max_std, "loss": self.loss,
+                       "comm": (self.traffic / 1024 / 1024)})
 

@@ -98,7 +98,7 @@ class GitSFL(Training):
         mean_grad_norm = local.union_train(self.modelClient[modelIdx], self.modelServer[modelIdx],
                                            self.classify_count[modelIdx])
         self.traffic += MODEL_SIZE * 2
-        self.traffic += (len(self.dict_users[curClient]) * FEATURE_SIZE * self.args.local_bs * 2)
+        self.traffic += (len(self.dict_users[curClient]) * FEATURE_SIZE * self.args.local_ep * 2)
         self.grad_norm[modelIdx] = mean_grad_norm
 
     def normalTrain(self, curClient: int, modelIdx: int):
@@ -182,7 +182,7 @@ class GitSFL(Training):
                 provide_data.append(temp)
 
         self.traffic += len(helpers) * MODEL_SIZE * self.args.local_ep
-        self.traffic += (overall_requirement * FEATURE_SIZE * self.args.local_bs)
+        self.traffic += (overall_requirement * FEATURE_SIZE * self.args.local_ep)
         self.helper_overhead += overall_requirement
         self.client_overhead += len(self.dict_users[curClient])
 
@@ -207,22 +207,22 @@ class GitSFL(Training):
     def adjustBudget(self):
         global COMM_BUDGET
 
-        # CLP, delta = self.detectCLP()
-        # if CLP:
-        #     if COMM_BUDGET >= BUDGET_THRESHOLD:
-        #         COMM_BUDGET += 0.01
-        #     else:
-        #         COMM_BUDGET = min(BUDGET_THRESHOLD, COMM_BUDGET * 2)
-        #         # COMM_BUDGET = COMM_BUDGET * 2
-        #
-        # else:
-        #     COMM_BUDGET = max(0.01, COMM_BUDGET / 2)
+        CLP, delta = self.detectCLP()
+        if CLP:
+            if COMM_BUDGET >= BUDGET_THRESHOLD:
+                COMM_BUDGET += 0.01
+            else:
+                COMM_BUDGET = min(BUDGET_THRESHOLD, COMM_BUDGET * 2)
+                # COMM_BUDGET = COMM_BUDGET * 2
+
+        else:
+            COMM_BUDGET = max(0.01, COMM_BUDGET / 2)
 
     ############################################
 
-        CLP, delta = self.detectCLP()
-        if self.round != 0:
-            COMM_BUDGET = max(0.01, COMM_BUDGET * (1 + delta))
+        # CLP, delta = self.detectCLP()
+        # if self.round != 0:
+        #     COMM_BUDGET = max(0.01, COMM_BUDGET * (1 + delta))
 
 
     def organizeDataByLabel(self) -> list[list[list[int]]]:

@@ -43,13 +43,8 @@ class SFL(Training):
             self.test()
 
             self.traffic += MODEL_SIZE * 2 * m
-            self.traffic += sum(lens) * FEATURE_SIZE * self.args.local_bs * 2
+            self.traffic += sum(lens) * FEATURE_SIZE * self.args.local_ep * 2
 
-            logger.info(
-                "Round{}, acc:{:.2f}, max_avg:{:.2f}, max_std:{:.2f}, loss:{:.2f}, comm:{:.2f}MB",
-                self.round, self.acc, self.max_avg, self.max_std,
-                self.loss, (self.traffic / 1024 / 1024))
-            if self.args.wandb:
-                wandb.log({"round": self.round, 'acc': self.acc, 'max_avg': self.max_avg,
-                           "max_std": self.max_std, "loss": self.loss,
-                           "comm": (self.traffic / 1024 / 1024)})
+            self.log()
+
+            self.round += 1
