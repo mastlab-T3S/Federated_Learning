@@ -3,7 +3,10 @@
 # Python version: 3.6
 
 import matplotlib
+import wandb
+from loguru import logger
 
+from Algorithm.Training_FL import FL
 from Algorithm.Training_GitSFL import GitSFL
 from Algorithm.Training_SFL import SFL
 from models.SplitModel import ResNet18_client_side, ResNet18_server_side
@@ -350,5 +353,8 @@ if __name__ == '__main__':
         net_glob_server.to(args.device)
         sfl = SFL(args, net_glob, dataset_train, dataset_test, dict_users, net_glob_client, net_glob_server)
         sfl.train()
+    elif args.algorithm == "FL":
+        fl = FL(args, net_glob, dataset_train, dataset_test, dict_users)
+        fl.train()
     else:
         raise "%s algorithm has not achieved".format(args.algorithm)
