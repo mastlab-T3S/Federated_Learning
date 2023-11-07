@@ -181,7 +181,6 @@ class GitSFL(Training):
                 helpers.append(client)
                 provide_data.append(temp)
 
-
         self.traffic += len(helpers) * MODEL_SIZE * self.args.local_ep
         self.traffic += (overall_requirement * FEATURE_SIZE * self.args.local_bs)
         self.helper_overhead += overall_requirement
@@ -229,10 +228,12 @@ class GitSFL(Training):
         return organized
 
     def log(self):
-        logger.info("Round{}, acc:{:.2f}, max_avg:{:.2f}, max_std:{:.2f}, loss:{:.2f}, comm:{:.2f}MB, budget:{:.2f}",
-                    self.round, self.acc, self.max_avg, self.max_std,
-                    self.loss, (self.traffic/1024/1024), COMM_BUDGET)
+        logger.info(
+            "Round{}, acc:{:.2f}, max_avg:{:.2f}, max_std:{:.2f}, loss:{:.2f}, comm:{:.2f}MB, budget:{:.2f}, add:{:.2f}",
+            self.round, self.acc, self.max_avg, self.max_std,
+            self.loss, (self.traffic / 1024 / 1024), COMM_BUDGET, (self.helper_overhead / self.client_overhead))
         if self.args.wandb:
             wandb.log({"round": self.round, 'acc': self.acc, 'max_avg': self.max_avg,
                        "max_std": self.max_std, "loss": self.loss,
-                       "comm": (self.traffic/1024/1024), "budget": COMM_BUDGET})
+                       "comm": (self.traffic / 1024 / 1024), "budget": COMM_BUDGET,
+                       "add": (self.helper_overhead / self.client_overhead)})
