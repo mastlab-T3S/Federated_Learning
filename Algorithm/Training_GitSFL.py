@@ -3,20 +3,22 @@ import random
 from typing import List
 
 import numpy as np
+import torch.nn
 import wandb
 
 from loguru import logger
 
 from Algorithm.Training import Training
-from models import Aggregation, LocalUpdate_FedAvg, LocalUpdate_GitSFL
+from models import Aggregation, LocalUpdate_GitSFL
 from models.SplitModel import Complete_ResNet18
 from utils.utils import getTrueLabels
 
-COMM_BUDGET = 0.01
 BUDGET_THRESHOLD = 0.2
 DECAY = 0.5
 DELTA = 0
 WIN = 10
+
+COMM_BUDGET = 0.01
 DATASET_SIZE = 50000
 MODEL_SIZE = 614170
 FEATURE_SIZE = int(13_107_622 / 50)
@@ -26,18 +28,16 @@ FEATURE_SIZE = int(13_107_622 / 50)
 class GitSFL(Training):
     def __init__(self, args, net_glob, dataset_train, dataset_test, dict_users, net_glob_client, net_glob_server):
         super().__init__(args, net_glob, dataset_train, dataset_test, dict_users)
-
         # GitSFL Setting
-        # self.net_glob = Complete_ResNet18(net_glob_client, net_glob_server)
         self.traffic = 0
-        self.comm_budget = COMM_BUDGET
-        self.repoSize = int(args.num_users * args.frac)
-        self.budget_list = [COMM_BUDGET for _ in range(self.repoSize)]
-        self.repo = [copy.deepcopy(self.net_glob) for _ in range(self.repoSize)]
-        self.modelServer = [copy.deepcopy(net_glob_server) for _ in range(self.repoSize)]
-        self.modelClient = [copy.deepcopy(net_glob_client) for _ in range(self.repoSize)]
+        self.comm_budget: float = COMM_BUDGET
+        self.repoSize: int = int(args.num_users * args.frac)
+        self.budget_list: List[float] = [COMM_BUDGET for _ in range(self.repoSize)]
+        self.repo: List[torch.nn.Module] = [copy.deepcopy(self.net_glob) for _ in range(self.repoSize)]
+        self.modelServer: List[torch.nn.Module] = [copy.deepcopy(net_glob_server) for _ in range(self.repoSize)]
+        self.modelClient: List[torch.nn.Module] = [copy.deepcopy(net_glob_client) for _ in range(self.repoSize)]
         self.cumulative_label_distributions = [np.zeros(args.num_classes) for _ in range(self.repoSize)]
-        self.cumulative_label_distribution_weight = [0 for _ in range(self.repoSize)]
+        self.cumulative_label_distribution_weight: List[float] = [0 for _ in range(self.repoSize)]
         self.true_labels = getTrueLabels(self)
         self.help_count = [0 for _ in range(args.num_users)]
         self.weakAggWeight = [1 for _ in range(self.repoSize)]
@@ -100,16 +100,6 @@ class GitSFL(Training):
         self.traffic += MODEL_SIZE * 2
         self.traffic += (len(self.dict_users[curClient]) * FEATURE_SIZE * self.args.local_ep * 2)
         self.grad_norm[modelIdx] = mean_grad_norm
-
-    def normalTrain(self, curClient: int, modelIdx: int):
-        sampledData = self.dict_users[curClient]
-        if self.args.MR == 1:
-            helpers, provide_data = self.selectHelpers(curClient, modelIdx)
-            sampledData = self.sampleData(helpers, provide_data)
-            sampledData.extend(self.dict_users[curClient])
-        local = LocalUpdate_FedAvg(args=self.args, dataset=self.dataset_train, idxs=sampledData, verbose=False)
-        w = local.train(round=self.round, net=copy.deepcopy(self.repo[modelIdx]).to(self.args.device))
-        self.repo[modelIdx].load_state_dict(w)
 
     def Agg(self):
         w_client = [copy.deepcopy(model_client.state_dict()) for model_client in self.modelClient]
@@ -207,23 +197,20 @@ class GitSFL(Training):
     def adjustBudget(self):
         global COMM_BUDGET
 
-        CLP, delta = self.detectCLP()
-        if CLP:
-            if COMM_BUDGET >= BUDGET_THRESHOLD:
-                COMM_BUDGET += 0.01
+        if self.args.DB == 1:
+            CLP, delta = self.detectCLP()
+            if CLP:
+                if COMM_BUDGET >= BUDGET_THRESHOLD:
+                    COMM_BUDGET += 0.01
+                else:
+                    COMM_BUDGET = min(BUDGET_THRESHOLD, COMM_BUDGET * 2)
+                    # COMM_BUDGET = COMM_BUDGET * 2
             else:
-                COMM_BUDGET = min(BUDGET_THRESHOLD, COMM_BUDGET * 2)
-                # COMM_BUDGET = COMM_BUDGET * 2
-
-        else:
-            COMM_BUDGET = max(0.01, COMM_BUDGET / 2)
-
-    ############################################
-
-        # CLP, delta = self.detectCLP()
-        # if self.round != 0:
-        #     COMM_BUDGET = max(0.01, COMM_BUDGET * (1 + delta))
-
+                COMM_BUDGET = max(0.01, COMM_BUDGET / 2)
+        elif self.args.DB == 2:
+            CLP, delta = self.detectCLP()
+            if self.round != 0:
+                COMM_BUDGET = max(0.01, COMM_BUDGET * (1 + delta))
 
     def organizeDataByLabel(self) -> list[list[list[int]]]:
         organized = []

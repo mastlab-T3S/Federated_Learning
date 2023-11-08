@@ -2,9 +2,11 @@
 # -*- coding: utf-8 -*-
 import datetime
 import os
+from typing import List, Any
 
 import numpy as np
 import wandb
+from numpy import ndarray, dtype
 
 from models import test_img
 
@@ -59,7 +61,7 @@ def initWandb(args):
                config={"seed": args.seed})
     wandb.log({'acc': 0, 'max_avg': 0, "max_std": 0})
 
-def getTrueLabels(self, dataset_train=None, num_classes=None, dict_users=None):
+def getTrueLabels(self, dataset_train=None, num_classes=None, dict_users=None)-> list[ndarray[Any, dtype[Any]]]:
     trueLabels = []
     dataset_train = self.dataset_train if dataset_train is None else dataset_train
     num_classes = self.args.num_classes if num_classes is None else num_classes
