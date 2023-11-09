@@ -1,5 +1,6 @@
 import copy
 import random
+from datetime import datetime
 from typing import List
 
 import numpy as np
@@ -18,7 +19,7 @@ DECAY = 0.5
 DELTA = 0
 WIN = 10
 
-COMM_BUDGET = 0.01
+COMM_BUDGET = 0.09093
 DATASET_SIZE = 50000
 MODEL_SIZE = 614170
 FEATURE_SIZE = int(13_107_622 / 50)
@@ -30,6 +31,7 @@ class GitSFL(Training):
         super().__init__(args, net_glob, dataset_train, dataset_test, dict_users)
         # GitSFL Setting
         self.traffic = 0
+        self.trafficList: List[float] = []
         self.comm_budget: float = COMM_BUDGET
         self.repoSize: int = int(args.num_users * args.frac)
         self.budget_list: List[float] = [COMM_BUDGET for _ in range(self.repoSize)]
@@ -87,6 +89,8 @@ class GitSFL(Training):
             if self.args.MR != 0:
                 print(self.help_count)
 
+        self.saveResult()
+
     def splitTrain(self, curClient: int, modelIdx: int):
         sampledData = None
         if self.args.MR != 0:
@@ -137,8 +141,8 @@ class GitSFL(Training):
             for classIdx, num in enumerate(provideData[i]):
                 if num == 0:
                     continue
-                lst = [(dataIdx, np.mean(self.classify_count[modexIdx][dataIdx])) for dataIdx in
-                       self.dataByLabel[helper][classIdx]]
+                lst = [(dataIdx, np.mean(self.classify_count[modexIdx][dataIdx]))
+                       for dataIdx in self.dataByLabel[helper][classIdx]]
                 lst.sort(key=lambda x: x[-1])
                 img = [i[0] for i in lst]
                 w = [i[1] + 1e-10 for i in lst]
@@ -232,3 +236,14 @@ class GitSFL(Training):
                        "max_std": self.max_std, "loss": self.loss,
                        "comm": (self.traffic / 1024 / 1024), "budget": COMM_BUDGET,
                        "add": (self.helper_overhead / self.client_overhead)})
+        self.trafficList.append((self.traffic / 1024 / 1024))
+
+    def saveResult(self):
+        filename = "../result/{}/{}_{}_{}_{}.txt".format(self.args.data_beta, self.args.algorithm, self.args.model,
+                                                self.args.dataset, datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
+        logger.critical("TRAINING COMPLETED! START SAVING")
+        with open(filename, 'w') as file:
+            for i in range(len(self.acc_list)):
+                line = str(self.trafficList[i]) + '\t' + str(self.acc_list[i]) + '\n'
+                file.write(line)
+        logger.critical("SAVE COMPLETED!")
