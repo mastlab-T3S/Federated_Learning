@@ -1,4 +1,5 @@
 import copy
+import os
 import random
 from datetime import datetime
 from typing import List
@@ -239,10 +240,13 @@ class GitSFL(Training):
         self.trafficList.append((self.traffic / 1024 / 1024))
 
     def saveResult(self):
-        filename = "../result/{}/{}_{}_{}_{}.txt".format(self.args.data_beta, self.args.algorithm, self.args.model,
-                                                self.args.dataset, datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
+        path = "./result/{}".format(self.args.data_beta)
+        if not os.path.exists(path):
+            os.makedirs(path)
+        filename = "{}_{}_{}_{}.txt".format(self.args.algorithm, self.args.model,
+                                            self.args.dataset, datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
         logger.critical("TRAINING COMPLETED! START SAVING")
-        with open(filename, 'w') as file:
+        with open(os.path.join(path, filename), 'w') as file:
             for i in range(len(self.acc_list)):
                 line = str(self.trafficList[i]) + '\t' + str(self.acc_list[i]) + '\n'
                 file.write(line)
