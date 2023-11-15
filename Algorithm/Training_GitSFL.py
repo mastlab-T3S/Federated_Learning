@@ -16,11 +16,12 @@ from models.SplitModel import Complete_ResNet18
 from utils.utils import getTrueLabels
 
 BUDGET_THRESHOLD = 0.2
+EXP = 2
 DECAY = 0.5
 DELTA = 0
 WIN = 10
 
-COMM_BUDGET = 0.09093
+COMM_BUDGET = 0.01
 DATASET_SIZE = 50000
 MODEL_SIZE = 614170
 FEATURE_SIZE = int(13_107_622 / 50)
@@ -35,7 +36,6 @@ class GitSFL(Training):
         self.trafficList: List[float] = []
         self.comm_budget: float = COMM_BUDGET
         self.repoSize: int = int(args.num_users * args.frac)
-        self.budget_list: List[float] = [COMM_BUDGET for _ in range(self.repoSize)]
         self.repo: List[torch.nn.Module] = [copy.deepcopy(self.net_glob) for _ in range(self.repoSize)]
         self.modelServer: List[torch.nn.Module] = [copy.deepcopy(net_glob_server) for _ in range(self.repoSize)]
         self.modelClient: List[torch.nn.Module] = [copy.deepcopy(net_glob_client) for _ in range(self.repoSize)]
@@ -43,7 +43,7 @@ class GitSFL(Training):
         self.cumulative_label_distribution_weight: List[float] = [0 for _ in range(self.repoSize)]
         self.true_labels = getTrueLabels(self)
         self.help_count = [0 for _ in range(args.num_users)]
-        self.weakAggWeight = [1 for _ in range(self.repoSize)]
+        self.weakAggWeight: float = 1
 
         self.grad_norm = [0 for _ in range(self.repoSize)]
         self.fed_grad_norm = [0 for _ in range(WIN + 2)]
@@ -118,7 +118,7 @@ class GitSFL(Training):
     def weakAgg(self, modelIdx: int):
         cur_model_client = self.modelClient[modelIdx]
         w = [copy.deepcopy(self.net_glob_client.state_dict()), copy.deepcopy(cur_model_client.state_dict())]
-        lens = [1, 10]
+        lens = [self.weakAggWeight, 10]
         w_avg_client = Aggregation(w, lens)
         cur_model_client.load_state_dict(w_avg_client)
 
@@ -190,7 +190,7 @@ class GitSFL(Training):
         print("total_provide_data:\t", provide_data)
         return helpers, provide_data
 
-    def detectCLP(self):
+    def detectCLP(self) -> (bool, float):
         self.fed_grad_norm.append(np.mean(self.grad_norm))
         OldNorm = max([np.mean(self.fed_grad_norm[-self.win - 1:-1]), 0.0000001])
         NewNorm = np.mean(self.fed_grad_norm[-self.win:])
@@ -216,6 +216,7 @@ class GitSFL(Training):
             CLP, delta = self.detectCLP()
             if self.round != 0:
                 COMM_BUDGET = max(0.01, COMM_BUDGET * (1 + delta))
+                # self.weakAggWeight = min(10.0, max(0.01, self.weakAggWeight * (1 + delta)))
 
     def organizeDataByLabel(self) -> list[list[list[int]]]:
         organized = []
@@ -245,7 +246,7 @@ class GitSFL(Training):
             os.makedirs(path)
         filename = "{}_{}_{}_{}.txt".format(self.args.algorithm, self.args.model,
                                             self.args.dataset, datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
-        logger.critical("TRAINING COMPLETED! START SAVING")
+        logger.critical("TRAINING COMPLETED! START SAVING...")
         with open(os.path.join(path, filename), 'w') as file:
             for i in range(len(self.acc_list)):
                 line = str(self.trafficList[i]) + '\t' + str(self.acc_list[i]) + '\n'
