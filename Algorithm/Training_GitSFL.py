@@ -16,7 +16,6 @@ from models.SplitModel import Complete_ResNet18
 from utils.utils import getTrueLabels
 
 BUDGET_THRESHOLD = 0.2
-EXP = 2
 DECAY = 0.5
 DELTA = 0
 WIN = 10
