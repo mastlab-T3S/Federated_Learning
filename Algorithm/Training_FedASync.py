@@ -1,6 +1,5 @@
 import copy
 
-import numpy as np
 from loguru import logger
 
 from Algorithm.Training_ASync import Training_ASync
