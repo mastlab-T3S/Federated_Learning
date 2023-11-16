@@ -2,13 +2,13 @@ import copy
 from typing import List, Any
 
 import numpy as np
-from utils.asynchronous_client_config import *
+from utils.ASyncClient import *
 
 
 class ClientsHandler:
     def __init__(self, args, dict_users):
         self.args = args
-        self.clients_list = generate_asyn_clients(args.num_users, dict_users)
+        self.clients_list: List[AbstractAsyncClient] = generate_asyn_clients(args.num_users, dict_users)
         self.update_queue = []
         self.idle_clients = set(list(range(args.num_users)))
 
@@ -41,6 +41,5 @@ class ClientsHandler:
         self.update_queue.append(lst)
         self.update_queue.sort(key=lambda x: x[-1])
 
-    def getClient(self, idx):
+    def getClient(self, idx) -> AbstractAsyncClient:
         return self.clients_list[idx]
-

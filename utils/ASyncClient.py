@@ -1,8 +1,18 @@
-import numpy as np
+from abc import abstractmethod
 import random
 
 
-class AsyncClient:
+class AbstractAsyncClient:
+    @abstractmethod
+    def get_train_time(self):
+        pass
+
+    @abstractmethod
+    def get_comm_time(self):
+        pass
+
+
+class AsyncClient(AbstractAsyncClient):
     def __init__(self, data_size, time_unit):
         self.time_unit = time_unit
         self.data_size = data_size
@@ -29,20 +39,14 @@ MEDIUM_QUALITY_NET = {'loc': 20, 'scale': 3}
 LOW_QUALITY_NET = {'loc': 30, 'scale': 5}
 VERY_LOW_QUALITY_NET = {'loc': 80, 'scale': 10}
 
+
 def generate_asyn_clients(client_num, dict_users):
     asyn_clients = []
     mean = []
-    time=[]
+    time = []
     for i in range(client_num):
-        time_unit = max([random.gauss(0.03,0.01), 0.01])
+        time_unit = max([random.gauss(0.03, 0.01), 0.01])
         time.append(time_unit)
         asyn_clients.append(AsyncClient(len(dict_users[i]), time_unit))
         mean.append(asyn_clients[-1].get_comm_time() + asyn_clients[-1].get_train_time())
-    # mean.sort()
-    # print(mean)
-    # print("mean",sum(mean)/100)
-    # mean = time
-    # mean.sort()
-    # print(mean)
-    # print("mean", sum(mean) / 100)
     return asyn_clients
