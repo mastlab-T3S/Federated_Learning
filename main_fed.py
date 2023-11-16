@@ -3,17 +3,12 @@
 # Python version: 3.6
 
 import matplotlib
-import wandb
-from loguru import logger
 
 from Algorithm.Training_FL import FL
 from Algorithm.Training_SFL import SFL
 from models.SplitModel import ResNet18_client_side, ResNet18_server_side
 
-# from Algorithm.Demo import Demo
-
 matplotlib.use('Agg')
-import copy
 
 from utils.options import args_parser
 from models import *
@@ -24,17 +19,14 @@ from Algorithm import *
 
 
 def FedAvg(net_glob, dataset_train, dataset_test, dict_users):
-    MODEL_SIZE = 44781080
     net_glob.train()
     # training
     acc = []
-    comm = 0
 
     for iter in range(args.epochs):
 
         print('*' * 80)
         print('Round {:3d}'.format(iter))
-
 
         w_locals = []
         lens = []
@@ -53,8 +45,6 @@ def FedAvg(net_glob, dataset_train, dataset_test, dict_users):
         net_glob.load_state_dict(w_glob)
 
         acc, loss = test(net_glob, dataset_test, args)
-
-
 
     save_result(acc, 'test_acc', args)
 
