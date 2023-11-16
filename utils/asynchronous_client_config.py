@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 
-class AsynClient:
+class AsyncClient:
     def __init__(self, data_size, time_unit):
         self.time_unit = time_unit
         self.data_size = data_size
@@ -36,7 +36,7 @@ def generate_asyn_clients(client_num, dict_users):
     for i in range(client_num):
         time_unit = max([random.gauss(0.03,0.01), 0.01])
         time.append(time_unit)
-        asyn_clients.append(AsynClient(len(dict_users[i]), time_unit))
+        asyn_clients.append(AsyncClient(len(dict_users[i]), time_unit))
         mean.append(asyn_clients[-1].get_comm_time() + asyn_clients[-1].get_train_time())
     # mean.sort()
     # print(mean)

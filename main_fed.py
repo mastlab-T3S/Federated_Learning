@@ -5,6 +5,7 @@
 import matplotlib
 
 from Algorithm.Training_FL import FL
+from Algorithm.Training_FedASync import FedASync
 from Algorithm.Training_SFL import SFL
 from models.SplitModel import ResNet18_client_side, ResNet18_server_side
 
@@ -338,5 +339,8 @@ if __name__ == '__main__':
     elif args.algorithm == "FL":
         fl = FL(args, net_glob, dataset_train, dataset_test, dict_users)
         fl.train()
+    elif args.algorithm == "FedASync":
+        fedasync = FedASync(args, net_glob, dataset_train, dataset_test, dict_users)
+        fedasync.run()
     else:
         raise "%s algorithm has not achieved".format(args.algorithm)

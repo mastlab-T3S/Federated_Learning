@@ -145,8 +145,11 @@ class LocalUpdate_FedProx(object):
         net.train()
         # train and update
         if self.args.optimizer == 'sgd':
-            optimizer = torch.optim.SGD(net.parameters(), lr=self.args.lr * (self.args.lr_decay ** round),
-                                        momentum=self.args.momentum, weight_decay=self.args.weight_decay)
+            if self.args.dynamic_lr == 1:
+                optimizer = torch.optim.SGD(net.parameters(), lr=self.args.lr * (self.args.lr_decay ** round),
+                                            momentum=self.args.momentum, weight_decay=self.args.weight_decay)
+            else:
+                optimizer = torch.optim.SGD(net.parameters(), lr=self.args.lr, momentum=self.args.momentum)
         elif self.args.optimizer == 'adam':
             optimizer = torch.optim.Adam(net.parameters(), lr=self.args.lr)
         elif self.args.optimizer == 'adaBelief':

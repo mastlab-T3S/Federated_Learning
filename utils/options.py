@@ -75,18 +75,13 @@ def args_parser():
     parser.add_argument("--lambda1", default=1, type=float, metavar="N", help="Weight for CE loss of main pathway")
     parser.add_argument("--lambda2", default=1, type=float, metavar="N", help="Weight for CE loss of hybrid pathways")
     parser.add_argument("--lambda3", default=1, type=float, metavar="N", help="Weight for KD loss of hybrid pathways")
-
-    # Demo
-    parser.add_argument('--AC_alpha', default=0.1, type=float)
-    parser.add_argument('--KD_alpha', default=1.0, type=float)
-    parser.add_argument('--KD_beta', default=0.1, type=float)
-    parser.add_argument('--KD_epoch', default=1, type=int)
-    parser.add_argument('--KD_lr', default=0.01, type=float)
+    # FedASync
+    parser.add_argument('--FedASync_alpha', type=float, default=0.9, help='The hypter parameter for the FedASync')
+    parser.add_argument('--poly_a', type=float, default=0.8, help='The hypter parameter for the FedASync_S')
 
     parser.add_argument('--MR', default=0, type=int)
     parser.add_argument('--DB', default=0, type=int)
     parser.add_argument('--BS', default=0, type=int)
-
 
     args = parser.parse_args()
     return args
