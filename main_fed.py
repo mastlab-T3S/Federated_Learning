@@ -7,7 +7,6 @@ import wandb
 from loguru import logger
 
 from Algorithm.Training_FL import FL
-from Algorithm.Training_GitSFL import GitSFL
 from Algorithm.Training_SFL import SFL
 from models.SplitModel import ResNet18_client_side, ResNet18_server_side
 
@@ -339,13 +338,6 @@ if __name__ == '__main__':
         FedMLB(args, net_glob, dataset_train, dataset_test, dict_users)
     elif args.algorithm == 'FedNTD':
         FedNTD(args, net_glob, dataset_train, dataset_test, dict_users)
-    elif args.algorithm == "GitSFL":
-        net_glob_client = ResNet18_client_side()
-        net_glob_client.to(args.device)
-        net_glob_server = ResNet18_server_side()
-        net_glob_server.to(args.device)
-        gitsfl = GitSFL(args, net_glob, dataset_train, dataset_test, dict_users, net_glob_client, net_glob_server)
-        gitsfl.train()
     elif args.algorithm == "SFL":
         net_glob_client = ResNet18_client_side()
         net_glob_client.to(args.device)
