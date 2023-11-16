@@ -1,5 +1,4 @@
-import copy
-from typing import List, Any
+from typing import Any
 
 import numpy as np
 from utils.ASyncClient import *
@@ -8,7 +7,7 @@ from utils.ASyncClient import *
 class ClientsHandler:
     def __init__(self, args, dict_users):
         self.args = args
-        self.clients_list: List[AbstractAsyncClient] = generate_asyn_clients(args.num_users, dict_users)
+        self.clients_list: List[AbstractAsyncClient] = AsyncClient.generateAsyncClients(args.num_users, dict_users)
         self.update_queue = []
         self.idle_clients = set(list(range(args.num_users)))
 
