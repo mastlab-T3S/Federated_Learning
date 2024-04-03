@@ -329,6 +329,8 @@ if __name__ == '__main__':
         FedMLB(args, net_glob, dataset_train, dataset_test, dict_users)
     elif args.algorithm == 'FedNTD':
         FedNTD(args, net_glob, dataset_train, dataset_test, dict_users)
+    elif args.algorithm == 'FedMut':
+        FedMut(args, net_glob, dataset_train, dataset_test, dict_users)
     elif args.algorithm == "SFL":
         net_glob_client = ResNet18_client_side()
         net_glob_client.to(args.device)

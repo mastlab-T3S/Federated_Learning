@@ -83,5 +83,11 @@ def args_parser():
     parser.add_argument('--DB', default=0, type=int)
     parser.add_argument('--BS', default=0, type=int)
 
+    # FedMut
+    parser.add_argument('--radius', type=float, default=4.0)
+    parser.add_argument('--min_radius', type=float, default=0.1)
+    parser.add_argument('--mut_acc_rate', type=float, default=0.3)
+    parser.add_argument('--mut_bound', type=int, default=50)
+
     args = parser.parse_args()
     return args

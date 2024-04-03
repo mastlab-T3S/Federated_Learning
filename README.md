@@ -50,3 +50,5 @@ Gao, Liang, et al. "FedDC: Federated Learning with Non-IID Data via Local Drift 
 Kim, Jinkyu and Kim, Geeho and Han, Bohyung. "Multi-Level Branched Regularization for Federated Learning." International Conference on Machine Learning. PMLR, 2022.
 
 Lee, Gihun, et al. "Preservation of the global knowledge by not-true distillation in federated learning." Advances in Neural Information Processing Systems 35 (2022): 38461-38474.
+
+Hu, Ming, et al. "FedMut: Generalized Federated Learning via Stochastic Mutation." Proceedings of the AAAI Conference on Artificial Intelligence, 38(11), 12528-12537, 2024.
