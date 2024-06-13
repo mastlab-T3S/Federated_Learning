@@ -4,3 +4,4 @@ from .Training_FedDC import FedDC
 from .Training_FedMLB import FedMLB
 from .Training_FedNTD import FedNTD
 from .Training_FedMut import FedMut
+from .Training_FedCross import FedCross

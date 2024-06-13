@@ -89,5 +89,9 @@ def args_parser():
     parser.add_argument('--mut_acc_rate', type=float, default=0.3)
     parser.add_argument('--mut_bound', type=int, default=50)
 
+    # FedCross arguments
+    parser.add_argument("--fedcross_first_stage_bound", type=int, default=0)
+    parser.add_argument("--fedcross_alpha", type=float, default=0.99)
+    parser.add_argument("--fedcross_collaberative_model_select_strategy", type=int, default=1, help="0 in order; 1 lowest simularity, 2 highest simularity")
     args = parser.parse_args()
     return args
