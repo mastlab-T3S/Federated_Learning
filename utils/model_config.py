@@ -15,6 +15,29 @@ GENERATORCONFIGS = {
     'femnist': (512, 256, 1, 62, 100),
 }
 
+CNN_GENERATORCONFIGS = {
+    'cifar10': (512, 84, 3, 10, 100), 
+    'cifar100': (512, 84, 3, 20, 100),
+    'femnist': (512, 256, 1, 62, 100),
+}
+
+RESNET_GENERATORCONFIGS = {
+    'cifar10': (512, 512, 3, 10, 100),
+    'cifar100': (512, 512, 3, 20, 100),
+    'femnist': (512, 256, 1, 62, 100),
+}
+
+RESNET20_GENERATORCONFIGS = {
+    'cifar10': (512, 256, 3, 10, 100), 
+    'cifar100': (512, 512, 3, 20, 100),
+    'femnist': (512, 256, 1, 62, 100),
+}
+
+VGG_GENERATORCONFIGS = {
+    'cifar10': (512, 4096, 3, 10, 100),
+    'cifar100': (512, 4096, 3, 20, 100),
+    'femnist': (512, 4096, 1, 62, 100),
+}
 
 FedGenRUNCONFIGS = {
     'femnist':

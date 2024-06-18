@@ -5,7 +5,7 @@ MAXLOG = 0.1
 from torch.autograd import Variable
 import collections
 import numpy as np
-from utils.model_config import GENERATORCONFIGS
+from utils.model_config import GENERATORCONFIGS,CNN_GENERATORCONFIGS,RESNET20_GENERATORCONFIGS,RESNET_GENERATORCONFIGS,VGG_GENERATORCONFIGS
 
 
 class Generator(nn.Module):
@@ -15,7 +15,17 @@ class Generator(nn.Module):
         self.dataset = dataset
         #self.model=model
         self.latent_layer_idx = latent_layer_idx
-        self.hidden_dim, self.latent_dim, self.input_channel, self.n_class, self.noise_dim = GENERATORCONFIGS[dataset]
+        if model == 'cnn':
+            self.hidden_dim, self.latent_dim, self.input_channel, self.n_class, self.noise_dim = CNN_GENERATORCONFIGS[dataset]
+        elif model == 'resnet18':
+            self.hidden_dim, self.latent_dim, self.input_channel, self.n_class, self.noise_dim = RESNET_GENERATORCONFIGS[dataset]
+        elif model == 'resnet20':
+            self.hidden_dim, self.latent_dim, self.input_channel, self.n_class, self.noise_dim = RESNET20_GENERATORCONFIGS[dataset]
+        elif model == 'vgg':
+            self.hidden_dim, self.latent_dim, self.input_channel, self.n_class, self.noise_dim = VGG_GENERATORCONFIGS[dataset]
+        else:
+            self.hidden_dim, self.latent_dim, self.input_channel, self.n_class, self.noise_dim = GENERATORCONFIGS[dataset]
+        # self.hidden_dim, self.latent_dim, self.input_channel, self.n_class, self.noise_dim = GENERATORCONFIGS[dataset]
         input_dim = self.noise_dim * 2 if self.embedding else self.noise_dim + self.n_class
         self.fc_configs = [input_dim, self.hidden_dim]
         self.init_loss_fn()
