@@ -12,7 +12,7 @@ MODEL_SIZE = 614170
 FEATURE_SIZE = int(13_107_622 / 50)
 
 
-@logger.catch
+# @logger.catch
 class SFL(Training):
     def __init__(self, args, net_glob, dataset_train, dataset_test, dict_users, net_glob_client, net_glob_server):
         super().__init__(args, net_glob, dataset_train, dataset_test, dict_users)
@@ -20,7 +20,7 @@ class SFL(Training):
         self.net_glob_client = net_glob_client
         self.net_glob_server = net_glob_server
 
-    @logger.catch
+    # @logger.catch
     def train(self):
         while (self.traffic / 1024 / 1024) < self.args.comm_limit:
             m = max(int(self.args.frac * self.args.num_users), 1)

@@ -8,7 +8,13 @@ import torch
 
 def Aggregation(w, lens):
     w_avg = None
-    total_count = sum(lens)
+    if lens == None:
+        total_count = len(w)
+        lens = []
+        for i in range(len(w)):
+            lens.append(1.0)
+    else:
+        total_count = sum(lens)
 
     for i in range(0, len(w)):
         if i == 0:
